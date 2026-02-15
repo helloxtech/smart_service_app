@@ -1,0 +1,214 @@
+import {
+  Conversation,
+  MaintenanceRequest,
+  Message,
+  PmUser,
+  SiteVisitNote,
+} from '../types/domain';
+
+export const mockPmUser: PmUser = {
+  id: 'pm-01',
+  name: 'Alex Chen',
+  email: 'alex.chen@rentalsmart.ca',
+  role: 'PM',
+};
+
+export const mockConversations: Conversation[] = [
+  {
+    id: 'conv-001',
+    visitorAlias: 'Guest-8A2F',
+    status: 'new',
+    property: {
+      id: 'prop-001',
+      name: 'Harborview Residences',
+      city: 'Vancouver',
+      address: '1088 Georgia St W, Vancouver, BC',
+      dataverseUrl:
+        'https://org.crm.dynamics.com/main.aspx?etn=rs_property&pagetype=entityrecord&id=prop-001',
+    },
+    unit: {
+      id: 'unit-1203',
+      label: 'Unit 1203',
+      bedrooms: 2,
+      bathrooms: 2,
+      rent: 3200,
+    },
+    hasBot: true,
+    botEscalated: true,
+    unreadCount: 3,
+    lastMessageAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+    dataverseCaseUrl:
+      'https://org.crm.dynamics.com/main.aspx?etn=incident&pagetype=entityrecord&id=case-001',
+  },
+  {
+    id: 'conv-002',
+    visitorAlias: 'Guest-5K19',
+    status: 'assigned',
+    property: {
+      id: 'prop-002',
+      name: 'Maple Crest Towers',
+      city: 'Burnaby',
+      address: '4800 Kingsway, Burnaby, BC',
+      dataverseUrl:
+        'https://org.crm.dynamics.com/main.aspx?etn=rs_property&pagetype=entityrecord&id=prop-002',
+    },
+    unit: {
+      id: 'unit-709',
+      label: 'Unit 709',
+      bedrooms: 1,
+      bathrooms: 1,
+      rent: 2550,
+    },
+    assignedPmId: 'pm-01',
+    hasBot: true,
+    botEscalated: false,
+    unreadCount: 0,
+    lastMessageAt: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+    dataverseCaseUrl:
+      'https://org.crm.dynamics.com/main.aspx?etn=incident&pagetype=entityrecord&id=case-002',
+  },
+  {
+    id: 'conv-003',
+    visitorAlias: 'Guest-ZY93',
+    status: 'waiting',
+    property: {
+      id: 'prop-003',
+      name: 'North Shore Flats',
+      city: 'North Vancouver',
+      address: '155 Lonsdale Ave, North Vancouver, BC',
+      dataverseUrl:
+        'https://org.crm.dynamics.com/main.aspx?etn=rs_property&pagetype=entityrecord&id=prop-003',
+    },
+    unit: {
+      id: 'unit-404',
+      label: 'Unit 404',
+      bedrooms: 1,
+      bathrooms: 1,
+      rent: 2400,
+    },
+    assignedPmId: 'pm-01',
+    hasBot: true,
+    botEscalated: true,
+    unreadCount: 1,
+    lastMessageAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+  },
+];
+
+export const mockMessages: Message[] = [
+  {
+    id: 'msg-001',
+    conversationId: 'conv-001',
+    senderType: 'visitor',
+    senderName: 'Guest-8A2F',
+    body: 'Hi, I have a leak under my kitchen sink. Can someone check today?',
+    createdAt: new Date(Date.now() - 40 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-002',
+    conversationId: 'conv-001',
+    senderType: 'bot',
+    senderName: 'Rental Smart Bot',
+    body: 'I can help with maintenance issues. Is water currently running?',
+    createdAt: new Date(Date.now() - 38 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-003',
+    conversationId: 'conv-001',
+    senderType: 'visitor',
+    senderName: 'Guest-8A2F',
+    body: 'Yes, I turned off the valve but the cabinet is wet.',
+    createdAt: new Date(Date.now() - 36 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-004',
+    conversationId: 'conv-001',
+    senderType: 'system',
+    senderName: 'System',
+    body: 'Bot escalated to property manager due to emergency keyword.',
+    createdAt: new Date(Date.now() - 34 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-005',
+    conversationId: 'conv-001',
+    senderType: 'visitor',
+    senderName: 'Guest-8A2F',
+    body: 'Please let me know if someone can come before 6pm.',
+    createdAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-006',
+    conversationId: 'conv-002',
+    senderType: 'pm',
+    senderName: 'Alex Chen',
+    body: 'Thanks, I have scheduled an inspection for tomorrow morning.',
+    createdAt: new Date(Date.now() - 50 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-007',
+    conversationId: 'conv-002',
+    senderType: 'visitor',
+    senderName: 'Guest-5K19',
+    body: 'Perfect, thank you!',
+    createdAt: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'msg-008',
+    conversationId: 'conv-003',
+    senderType: 'visitor',
+    senderName: 'Guest-ZY93',
+    body: 'Checking if parking spot assignment was updated?',
+    createdAt: new Date(Date.now() - 90 * 60 * 1000).toISOString(),
+  },
+];
+
+export const mockMaintenanceRequests: MaintenanceRequest[] = [
+  {
+    id: 'mnt-001',
+    conversationId: 'conv-001',
+    propertyId: 'prop-001',
+    unitId: 'unit-1203',
+    title: 'Kitchen sink leak',
+    summary: 'Water dripping from p-trap, cabinet floor wet.',
+    status: 'new',
+    priority: 'high',
+    dataverseUrl:
+      'https://org.crm.dynamics.com/main.aspx?etn=msdyn_workorder&pagetype=entityrecord&id=work-001',
+    updatedAt: new Date(Date.now() - 20 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'mnt-002',
+    conversationId: 'conv-002',
+    propertyId: 'prop-002',
+    unitId: 'unit-709',
+    title: 'Bedroom heater noise',
+    summary: 'Intermittent rattling sound from heater vent.',
+    status: 'in_progress',
+    priority: 'medium',
+    dataverseUrl:
+      'https://org.crm.dynamics.com/main.aspx?etn=msdyn_workorder&pagetype=entityrecord&id=work-002',
+    updatedAt: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
+  },
+  {
+    id: 'mnt-003',
+    propertyId: 'prop-003',
+    unitId: 'unit-404',
+    title: 'Lobby mailbox lock replacement',
+    summary: 'Mailbox cluster lock replaced and tested.',
+    status: 'done',
+    priority: 'low',
+    dataverseUrl:
+      'https://org.crm.dynamics.com/main.aspx?etn=msdyn_workorder&pagetype=entityrecord&id=work-003',
+    updatedAt: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+  },
+];
+
+export const mockVisitNotes: SiteVisitNote[] = [
+  {
+    id: 'visit-001',
+    propertyId: 'prop-002',
+    unitId: 'unit-709',
+    maintenanceRequestId: 'mnt-002',
+    note: 'Inspected heater, likely loose vent plate. Vendor follow-up booked.',
+    createdAt: new Date(Date.now() - 22 * 60 * 60 * 1000).toISOString(),
+  },
+];
