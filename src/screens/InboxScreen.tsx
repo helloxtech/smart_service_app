@@ -9,11 +9,13 @@ import { colors, radius, spacing, typography } from '../theme/theme';
 import { InboxStackParamList } from '../navigation/types';
 import { ConversationStatus } from '../types/domain';
 
-const filters: Array<{ label: string; value: ConversationStatus | 'all' }> = [
+type InboxFilter = 'all' | ConversationStatus;
+
+const filters: Array<{ label: string; value: InboxFilter }> = [
   { label: 'All', value: 'all' },
   { label: 'New', value: 'new' },
   { label: 'Assigned', value: 'assigned' },
-  { label: 'Waiting', value: 'waiting' },
+  { label: 'Needs Reply', value: 'waiting' },
   { label: 'Closed', value: 'closed' },
 ];
 
@@ -22,11 +24,17 @@ type Props = NativeStackScreenProps<InboxStackParamList, 'Inbox'>;
 export const InboxScreen = ({ navigation }: Props) => {
   const { conversations, currentUser } = useAppStore();
   const insets = useSafeAreaInsets();
-  const [activeFilter, setActiveFilter] = useState<ConversationStatus | 'all'>('all');
+  const [activeFilter, setActiveFilter] = useState<InboxFilter>('all');
 
   const filteredConversations = useMemo(() => {
     if (activeFilter === 'all') {
       return conversations;
+    }
+
+    if (activeFilter === 'assigned') {
+      return conversations.filter(
+        (item) => item.status === 'assigned' || item.status === 'waiting',
+      );
     }
 
     return conversations.filter((item) => item.status === activeFilter);
