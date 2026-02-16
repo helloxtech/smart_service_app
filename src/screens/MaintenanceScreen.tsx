@@ -31,6 +31,15 @@ export const MaintenanceScreen = () => {
   const navigation = useNavigation<NativeStackNavigationProp<MaintenanceStackParamList>>();
   const [activeFilter, setActiveFilter] = useState<MaintenanceStatus | 'all'>('all');
   const canEditStatus = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
+  const counts = useMemo(
+    () => ({
+      all: maintenanceRequests.length,
+      new: maintenanceRequests.filter((item) => item.status === 'new').length,
+      in_progress: maintenanceRequests.filter((item) => item.status === 'in_progress').length,
+      done: maintenanceRequests.filter((item) => item.status === 'done').length,
+    }),
+    [maintenanceRequests],
+  );
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') {
@@ -80,6 +89,7 @@ export const MaintenanceScreen = () => {
       <View style={styles.filterRow}>
         {filters.map((filter) => {
           const selected = filter.value === activeFilter;
+          const count = counts[filter.value];
           return (
             <Pressable
               key={filter.value}
@@ -89,6 +99,11 @@ export const MaintenanceScreen = () => {
               <Text style={[styles.filterLabel, selected && styles.filterLabelActive]}>
                 {filter.label}
               </Text>
+              <View style={[styles.countBadge, selected && styles.countBadgeActive]}>
+                <Text style={[styles.countLabel, selected && styles.countLabelActive]}>
+                  {count}
+                </Text>
+              </View>
             </Pressable>
           );
         })}
@@ -147,12 +162,15 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
   },
   filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.inputBorder,
     borderRadius: radius.md,
     paddingHorizontal: 10,
     paddingVertical: 8,
     backgroundColor: colors.surface,
+    gap: 6,
   },
   filterChipActive: {
     borderColor: colors.accent,
@@ -164,6 +182,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   filterLabelActive: {
+    color: colors.accent,
+  },
+  countBadge: {
+    minWidth: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    backgroundColor: '#EAECEF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  countLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  countLabelActive: {
     color: colors.accent,
   },
   content: {
