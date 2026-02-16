@@ -38,6 +38,13 @@ interface AddVisitNoteInput {
   photoUri?: string;
 }
 
+interface AddMaintenanceUpdateInput {
+  maintenanceRequestId: string;
+  note?: string;
+  photoUri?: string;
+  source?: 'maintenance' | 'chat';
+}
+
 interface UpdateProfileInput {
   name: string;
   phone?: string;
@@ -60,13 +67,18 @@ interface AppStoreValue {
   updateProfile: (payload: UpdateProfileInput) => Promise<void>;
   markConversationRead: (conversationId: string) => void;
   assignConversation: (conversationId: string) => Promise<void>;
-  sendMessage: (conversationId: string, text: string) => Promise<void>;
+  sendMessage: (
+    conversationId: string,
+    text: string,
+    photoUri?: string,
+  ) => Promise<void>;
   closeConversation: (conversationId: string) => Promise<void>;
   updateMaintenanceStatus: (
     requestId: string,
     status: MaintenanceStatus,
   ) => Promise<void>;
   addVisitNote: (payload: AddVisitNoteInput) => Promise<void>;
+  addMaintenanceUpdate: (payload: AddMaintenanceUpdateInput) => Promise<void>;
   connectConversationRealtime: (
     conversationId: string,
     onError?: (message: string) => void,
@@ -159,6 +171,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
             senderType: payload.senderType,
             senderName: payload.senderName,
             body: payload.body,
+            photoUri: payload.photoUri,
             createdAt,
           },
         ];
@@ -343,9 +356,113 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     [currentUser],
   );
 
+  const resolveLinkedMaintenanceRequest = useCallback(
+    (conversationId: string): MaintenanceRequest | undefined => {
+      const byConversation = maintenanceRequests.find(
+        (item) => item.conversationId === conversationId,
+      );
+      if (byConversation) {
+        return byConversation;
+      }
+
+      const conversation = conversations.find((item) => item.id === conversationId);
+      if (!conversation) {
+        return undefined;
+      }
+
+      return maintenanceRequests.find(
+        (item) =>
+          item.propertyId === conversation.property.id
+          && item.unitId === conversation.unit.id,
+      );
+    },
+    [conversations, maintenanceRequests],
+  );
+
+  const applyMaintenanceNoteState = useCallback((note: SiteVisitNote) => {
+    setVisitNotes((prev) => [note, ...prev]);
+
+    if (note.maintenanceRequestId) {
+      setMaintenanceRequests((prev) =>
+        prev.map((item) =>
+          item.id === note.maintenanceRequestId
+            ? {
+                ...item,
+                updatedAt: note.createdAt,
+              }
+            : item,
+        ),
+      );
+    }
+  }, []);
+
+  const addMaintenanceUpdate = useCallback(
+    async (payload: AddMaintenanceUpdateInput) => {
+      if (!currentUser) {
+        throw new Error('Please sign in before adding updates.');
+      }
+
+      const request = maintenanceRequests.find(
+        (item) => item.id === payload.maintenanceRequestId,
+      );
+      if (!request) {
+        throw new Error('Maintenance request not found.');
+      }
+
+      const hasPhoto = Boolean(payload.photoUri);
+      const noteText = payload.note?.trim() ?? '';
+      if (!noteText && !hasPhoto) {
+        throw new Error('Add a note or photo before saving.');
+      }
+
+      const resolvedNote =
+        noteText
+        || `${currentUser.name} added a photo update.`;
+      const source = payload.source ?? 'maintenance';
+      const now = new Date().toISOString();
+
+      if (!runtimeConfig.useMockData) {
+        const saved = await remoteApi.addMaintenanceUpdate(
+          payload.maintenanceRequestId,
+          {
+            note: resolvedNote,
+            photoUri: payload.photoUri,
+            source,
+          },
+        );
+        applyMaintenanceNoteState({
+          ...saved,
+          source: saved.source ?? source,
+          authorName: saved.authorName ?? currentUser.name,
+        });
+        return;
+      }
+
+      const local: SiteVisitNote = {
+        id: `maintenance-note-${Date.now()}`,
+        propertyId: request.propertyId,
+        unitId: request.unitId,
+        maintenanceRequestId: request.id,
+        note: resolvedNote,
+        photoUri: payload.photoUri,
+        source,
+        authorName: currentUser.name,
+        createdAt: now,
+      };
+      applyMaintenanceNoteState(local);
+    },
+    [applyMaintenanceNoteState, currentUser, maintenanceRequests],
+  );
+
   const sendMessage = useCallback(
-    async (conversationId: string, text: string) => {
-      if (!currentUser || !text.trim()) {
+    async (conversationId: string, text: string, photoUri?: string) => {
+      if (!currentUser) {
+        return;
+      }
+
+      const hasPhoto = Boolean(photoUri);
+      const trimmedText = text.trim();
+      if (!trimmedText && !hasPhoto) {
         return;
       }
 
@@ -354,12 +471,15 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         throw new Error('Cannot send a message to a closed conversation.');
       }
 
-      const body = text.trim();
+      const body = trimmedText || 'Shared a photo.';
       let message: Message | null = null;
       const actingAsPm = isPmRole(currentUser.role);
 
       if (!runtimeConfig.useMockData) {
-        message = await remoteApi.sendMessage(conversationId, body);
+        message = await remoteApi.sendMessage(conversationId, {
+          body,
+          photoUri,
+        });
       }
 
       const now = message?.createdAt ?? new Date().toISOString();
@@ -372,6 +492,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
           senderType: actingAsPm ? 'pm' : 'visitor',
           senderName: currentUser.name,
           body,
+          photoUri,
           createdAt: now,
         },
       ]);
@@ -397,8 +518,24 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
           ),
         ),
       );
+
+      if (hasPhoto) {
+        const linkedRequest = resolveLinkedMaintenanceRequest(conversationId);
+        if (linkedRequest) {
+          try {
+            await addMaintenanceUpdate({
+              maintenanceRequestId: linkedRequest.id,
+              note: `${currentUser.name} shared a photo in chat.`,
+              photoUri,
+              source: 'chat',
+            });
+          } catch {
+            // Chat send should not fail if maintenance auto-link cannot be stored.
+          }
+        }
+      }
     },
-    [conversations, currentUser],
+    [addMaintenanceUpdate, conversations, currentUser, resolveLinkedMaintenanceRequest],
   );
 
   const closeConversation = useCallback(async (conversationId: string) => {
@@ -473,7 +610,8 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   );
 
   const addVisitNote = useCallback(async (payload: AddVisitNoteInput) => {
-    if (!isPmRole(currentUser?.role)) {
+    const actingUser = currentUser;
+    if (!actingUser || !isPmRole(actingUser.role)) {
       throw new Error('Only PM/Supervisor can add site visit notes.');
     }
 
@@ -485,20 +623,11 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
     if (!runtimeConfig.useMockData) {
       const saved = await remoteApi.addVisitNote(payload);
-      setVisitNotes((prev) => [saved, ...prev]);
-
-      if (saved.maintenanceRequestId) {
-        setMaintenanceRequests((prev) =>
-          prev.map((item) =>
-            item.id === saved.maintenanceRequestId
-              ? {
-                  ...item,
-                  updatedAt: saved.createdAt,
-                }
-              : item,
-          ),
-        );
-      }
+      applyMaintenanceNoteState({
+        ...saved,
+        source: saved.source ?? 'visit',
+        authorName: saved.authorName ?? actingUser.name,
+      });
 
       return;
     }
@@ -510,24 +639,13 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       maintenanceRequestId: payload.maintenanceRequestId,
       note: payload.note,
       photoUri: payload.photoUri,
+      source: 'visit',
+      authorName: actingUser.name,
       createdAt: now,
     };
 
-    setVisitNotes((prev) => [note, ...prev]);
-
-    if (payload.maintenanceRequestId) {
-      setMaintenanceRequests((prev) =>
-        prev.map((item) =>
-          item.id === payload.maintenanceRequestId
-            ? {
-                ...item,
-                updatedAt: now,
-              }
-            : item,
-        ),
-      );
-    }
-  }, [currentUser?.role]);
+    applyMaintenanceNoteState(note);
+  }, [applyMaintenanceNoteState, currentUser]);
 
   const connectConversationRealtime = useCallback(
     async (conversationId: string, onError?: (message: string) => void) => {
@@ -577,10 +695,12 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       closeConversation,
       updateMaintenanceStatus,
       addVisitNote,
+      addMaintenanceUpdate,
       connectConversationRealtime,
     }),
     [
       addVisitNote,
+      addMaintenanceUpdate,
       assignConversation,
       closeConversation,
       connectConversationRealtime,

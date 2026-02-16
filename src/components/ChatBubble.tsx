@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import { Message } from '../types/domain';
 import { colors, radius, spacing, typography } from '../theme/theme';
 
@@ -17,6 +17,7 @@ export const ChatBubble = ({ message }: ChatBubbleProps) => {
   }
 
   const isPm = message.senderType === 'pm';
+  const isPhotoOnlyCaption = message.photoUri && message.body.trim().toLowerCase() === 'shared a photo.';
 
   return (
     <View style={[styles.row, isPm ? styles.rowPm : styles.rowVisitor]}>
@@ -24,9 +25,14 @@ export const ChatBubble = ({ message }: ChatBubbleProps) => {
         <Text style={[styles.sender, isPm ? styles.senderPm : styles.senderVisitor]}>
           {message.senderName}
         </Text>
-        <Text style={[styles.body, isPm ? styles.bodyPm : styles.bodyVisitor]}>
-          {message.body}
-        </Text>
+        {message.photoUri && (
+          <Image source={{ uri: message.photoUri }} style={styles.messageImage} />
+        )}
+        {!isPhotoOnlyCaption && (
+          <Text style={[styles.body, isPm ? styles.bodyPm : styles.bodyVisitor]}>
+            {message.body}
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -79,6 +85,14 @@ const styles = StyleSheet.create({
   },
   bodyVisitor: {
     color: colors.textPrimary,
+  },
+  messageImage: {
+    width: 220,
+    height: 180,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#E8EEF1',
   },
   systemWrap: {
     alignItems: 'center',

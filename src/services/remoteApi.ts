@@ -38,6 +38,17 @@ interface VisitNoteInput {
   photoUri?: string;
 }
 
+interface ConversationMessageInput {
+  body: string;
+  photoUri?: string;
+}
+
+interface MaintenanceUpdateInput {
+  note: string;
+  photoUri?: string;
+  source?: 'maintenance' | 'chat';
+}
+
 export const remoteApi = {
   signIn: (email: string, password: string) =>
     api.post<SignInResponse>('/mobile/pm/auth/sign-in', {
@@ -53,10 +64,8 @@ export const remoteApi = {
   assignConversation: (conversationId: string) =>
     api.post<void>(`/mobile/pm/conversations/${conversationId}/assign`, {}),
 
-  sendMessage: (conversationId: string, body: string) =>
-    api.post<Message>(`/mobile/pm/conversations/${conversationId}/messages`, {
-      body,
-    }),
+  sendMessage: (conversationId: string, payload: ConversationMessageInput) =>
+    api.post<Message>(`/mobile/pm/conversations/${conversationId}/messages`, payload),
 
   closeConversation: (conversationId: string) =>
     api.post<void>(`/mobile/pm/conversations/${conversationId}/close`, {}),
@@ -68,6 +77,9 @@ export const remoteApi = {
 
   addVisitNote: (payload: VisitNoteInput) =>
     api.post<SiteVisitNote>('/mobile/pm/visit-notes', payload),
+
+  addMaintenanceUpdate: (requestId: string, payload: MaintenanceUpdateInput) =>
+    api.post<SiteVisitNote>(`/mobile/pm/maintenance/${requestId}/updates`, payload),
 
   getChatAccess: (conversationId: string) =>
     api.post<ChatAccessResponse>(`/mobile/pm/conversations/${conversationId}/chat-access`, {}),

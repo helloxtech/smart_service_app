@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
+  Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -39,7 +39,6 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     sendMessage,
     closeConversation,
     updateMaintenanceStatus,
-    addVisitNote,
     connectConversationRealtime,
     isRemoteMode,
     currentUser,
@@ -48,10 +47,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   const realtimeClientRef = useRef<ChatRealtimeClient | null>(null);
 
   const [draft, setDraft] = useState('');
-  const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
-  const [note, setNote] = useState('');
   const [selectedPhotoUri, setSelectedPhotoUri] = useState<string | undefined>();
-  const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
   const [realtimeError, setRealtimeError] = useState<string | null>(null);
   const canManageConversation =
     currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
@@ -167,13 +163,14 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   };
 
   const onSend = async () => {
-    if (!draft.trim()) {
+    if (!draft.trim() && !selectedPhotoUri) {
       return;
     }
 
     try {
-      await sendMessage(conversation.id, draft);
+      await sendMessage(conversation.id, draft, selectedPhotoUri);
       setDraft('');
+      setSelectedPhotoUri(undefined);
     } catch (error) {
       Alert.alert('Unable to send', (error as Error).message);
     }
@@ -250,36 +247,6 @@ export const ConversationDetailScreen = ({ route }: Props) => {
       { text: 'Photo library', onPress: () => void pickPhotoFromLibrary() },
       { text: 'Cancel', style: 'cancel' },
     ]);
-  };
-
-  const saveVisitNote = async () => {
-    if (!canManageConversation) {
-      Alert.alert('Restricted action', 'Only PM/Admin users can add site visit notes.');
-      return;
-    }
-
-    if (!note.trim()) {
-      Alert.alert('Note required', 'Please add a site visit note before saving.');
-      return;
-    }
-
-    try {
-      await addVisitNote({
-        propertyId: conversation.property.id,
-        unitId: conversation.unit.id,
-        maintenanceRequestId: selectedMaintenanceId,
-        note,
-        photoUri: selectedPhotoUri,
-      });
-
-      setNote('');
-      setSelectedPhotoUri(undefined);
-      setSelectedMaintenanceId(undefined);
-      setIsNoteModalVisible(false);
-      Alert.alert('Saved', 'Site visit note was added.');
-    } catch (error) {
-      Alert.alert('Unable to save note', (error as Error).message);
-    }
   };
 
   const onUpdateStatus = async (requestId: string, status: MaintenanceStatus) => {
@@ -416,19 +383,20 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
       {!isClosed ? (
         <View style={styles.composerWrap}>
-          {canManageConversation && (
-            <View style={styles.topComposerRow}>
-              <Pressable
-                onPress={() => setIsNoteModalVisible(true)}
-                style={styles.noteButton}
-              >
-                <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
-                <Text style={styles.noteButtonLabel}>Add site note + photo</Text>
+          {selectedPhotoUri && (
+            <View style={styles.photoPreviewRow}>
+              <Image source={{ uri: selectedPhotoUri }} style={styles.photoPreviewThumb} />
+              <Text style={styles.photoPreviewText}>Photo attached</Text>
+              <Pressable onPress={() => setSelectedPhotoUri(undefined)}>
+                <Text style={styles.photoPreviewRemove}>Remove</Text>
               </Pressable>
             </View>
           )}
 
           <View style={styles.messageComposer}>
+            <Pressable style={styles.attachButton} onPress={() => void choosePhoto()}>
+              <Ionicons name="image-outline" size={20} color={colors.accent} />
+            </Pressable>
             <TextInput
               style={styles.input}
               value={draft}
@@ -437,7 +405,13 @@ export const ConversationDetailScreen = ({ route }: Props) => {
               placeholderTextColor="#8D9AA5"
               multiline
             />
-            <Pressable onPress={() => void onSend()} style={styles.sendButton}>
+            <Pressable
+              onPress={() => void onSend()}
+              style={[
+                styles.sendButton,
+                !draft.trim() && !selectedPhotoUri && styles.sendButtonDisabled,
+              ]}
+            >
               <Ionicons name="send" size={17} color="#FFFFFF" />
             </Pressable>
           </View>
@@ -449,73 +423,6 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           </Text>
         </View>
       )}
-
-      <Modal visible={isNoteModalVisible} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Site visit note</Text>
-              <Pressable onPress={() => setIsNoteModalVisible(false)}>
-                <Ionicons name="close" size={22} color={colors.textPrimary} />
-              </Pressable>
-            </View>
-
-            <Text style={styles.modalSubtitle}>
-              Link this note to a request and add inspection details.
-            </Text>
-
-            <View style={styles.requestSelector}>
-              {linkedMaintenance.map((request) => {
-                const selected = selectedMaintenanceId === request.id;
-                return (
-                  <Pressable
-                    key={request.id}
-                    onPress={() => setSelectedMaintenanceId(request.id)}
-                    style={[
-                      styles.requestPill,
-                      selected && styles.requestPillSelected,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.requestPillText,
-                        selected && styles.requestPillTextSelected,
-                      ]}
-                    >
-                      {request.title}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <TextInput
-              style={styles.noteInput}
-              value={note}
-              onChangeText={setNote}
-              placeholder="What did you observe onsite?"
-              placeholderTextColor="#8D9AA5"
-              multiline
-            />
-
-            <Pressable style={styles.photoPicker} onPress={() => void choosePhoto()}>
-              <Ionicons name="image-outline" size={18} color={colors.textPrimary} />
-              <Text style={styles.photoPickerText}>
-                {selectedPhotoUri ? 'Photo attached' : 'Attach photo'}
-              </Text>
-            </Pressable>
-
-            <View style={styles.modalActions}>
-              <PrimaryButton
-                label="Cancel"
-                onPress={() => setIsNoteModalVisible(false)}
-                variant="outline"
-              />
-              <PrimaryButton label="Save note" onPress={() => void saveVisitNote()} />
-            </View>
-          </View>
-        </View>
-      </Modal>
     </KeyboardAvoidingView>
   );
 };
@@ -677,25 +584,45 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     gap: spacing.sm,
   },
-  topComposerRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-start',
-  },
-  noteButton: {
+  photoPreviewRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 8,
     borderWidth: 1,
     borderColor: colors.inputBorder,
     borderRadius: radius.md,
-    paddingHorizontal: 10,
+    paddingHorizontal: 8,
     paddingVertical: 8,
     backgroundColor: '#FAFCFD',
   },
-  noteButtonLabel: {
+  photoPreviewThumb: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#E8EEF1',
+  },
+  photoPreviewText: {
+    flex: 1,
     color: colors.textPrimary,
+    fontWeight: '600',
+    fontSize: typography.small,
+  },
+  photoPreviewRemove: {
+    color: colors.danger,
     fontWeight: '700',
     fontSize: 12,
+  },
+  attachButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FAFCFD',
   },
   messageComposer: {
     flexDirection: 'row',
@@ -711,7 +638,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     backgroundColor: '#FAFCFD',
     paddingHorizontal: 12,
-    paddingVertical: 10,
+    paddingVertical: 8,
     color: colors.textPrimary,
   },
   sendButton: {
@@ -721,6 +648,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  sendButtonDisabled: {
+    backgroundColor: '#94C9B2',
   },
   closedNoticeWrap: {
     paddingHorizontal: spacing.md,
@@ -735,87 +665,5 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     lineHeight: 20,
     textAlign: 'center',
-  },
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: colors.overlay,
-    justifyContent: 'flex-end',
-  },
-  modalCard: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    padding: spacing.lg,
-    gap: spacing.md,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  modalTitle: {
-    color: colors.textPrimary,
-    fontSize: typography.heading,
-    fontWeight: '800',
-  },
-  modalSubtitle: {
-    color: colors.textSecondary,
-    fontSize: typography.small,
-    lineHeight: 20,
-  },
-  requestSelector: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  requestPill: {
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    borderRadius: radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    backgroundColor: '#FAFCFD',
-  },
-  requestPillSelected: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentMuted,
-  },
-  requestPillText: {
-    color: colors.textSecondary,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  requestPillTextSelected: {
-    color: colors.accent,
-  },
-  noteInput: {
-    minHeight: 110,
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    borderRadius: radius.md,
-    backgroundColor: '#FAFCFD',
-    color: colors.textPrimary,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    textAlignVertical: 'top',
-  },
-  photoPicker: {
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    borderRadius: radius.md,
-    paddingVertical: 12,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FAFCFD',
-  },
-  photoPickerText: {
-    color: colors.textPrimary,
-    fontWeight: '600',
-    fontSize: typography.small,
-  },
-  modalActions: {
-    gap: 8,
   },
 });

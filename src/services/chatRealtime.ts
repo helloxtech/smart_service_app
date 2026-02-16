@@ -4,6 +4,7 @@ export interface RealtimeMessagePayload {
   senderType: 'visitor' | 'pm' | 'bot' | 'system';
   senderName: string;
   body: string;
+  photoUri?: string;
   createdAt?: string;
 }
 

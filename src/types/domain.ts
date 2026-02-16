@@ -38,6 +38,7 @@ export interface Message {
   senderType: SenderType;
   senderName: string;
   body: string;
+  photoUri?: string;
   createdAt: string;
 }
 
@@ -61,6 +62,8 @@ export interface SiteVisitNote {
   maintenanceRequestId?: string;
   note: string;
   photoUri?: string;
+  source?: 'visit' | 'maintenance' | 'chat';
+  authorName?: string;
   createdAt: string;
 }
 
