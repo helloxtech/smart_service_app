@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConversationCard } from '../components/ConversationCard';
@@ -24,6 +24,15 @@ export const InboxScreen = ({ navigation }: Props) => {
   const { conversations, currentUser } = useAppStore();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<InboxFilter>('all');
+  const counts = useMemo(
+    () => ({
+      new: conversations.filter((item) => item.status === 'new').length,
+      waiting: conversations.filter((item) => item.status === 'waiting').length,
+      in_progress: conversations.filter((item) => item.status === 'assigned').length,
+      closed: conversations.filter((item) => item.status === 'closed').length,
+    }),
+    [conversations],
+  );
 
   const filteredConversations = useMemo(() => {
     if (activeFilter === 'all') {
@@ -44,17 +53,26 @@ export const InboxScreen = ({ navigation }: Props) => {
           <Text style={styles.title}>Live Inbox</Text>
           <Text style={styles.subtitle}>Hello {currentUser?.name.split(' ')[0] ?? 'PM'}</Text>
         </View>
-        <View style={styles.statChip}>
-          <Text style={styles.statNumber}>
-            {conversations.filter((item) => item.status === 'new').length}
-          </Text>
-          <Text style={styles.statLabel}>new</Text>
-        </View>
       </View>
 
-      <View style={styles.filterRow}>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRow}
+      >
         {filters.map((filter) => {
           const selected = activeFilter === filter.value;
+          const count =
+            filter.value === 'new'
+              ? counts.new
+              : filter.value === 'waiting'
+                ? counts.waiting
+                : filter.value === 'in_progress'
+                  ? counts.in_progress
+                  : filter.value === 'closed'
+                    ? counts.closed
+                    : undefined;
+
           return (
             <Pressable
               key={filter.value}
@@ -66,10 +84,17 @@ export const InboxScreen = ({ navigation }: Props) => {
               >
                 {filter.label}
               </Text>
+              {typeof count === 'number' && (
+                <View style={[styles.countBadge, selected && styles.countBadgeActive]}>
+                  <Text style={[styles.countLabel, selected && styles.countLabelActive]}>
+                    {count}
+                  </Text>
+                </View>
+              )}
             </Pressable>
           );
         })}
-      </View>
+      </ScrollView>
 
       <FlatList
         data={filteredConversations}
@@ -105,8 +130,7 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     marginBottom: spacing.md,
   },
   title: {
@@ -119,37 +143,21 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     marginTop: 2,
   },
-  statChip: {
-    backgroundColor: colors.accentMuted,
-    borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    alignItems: 'center',
-  },
-  statNumber: {
-    fontWeight: '800',
-    color: colors.accent,
-    fontSize: 18,
-  },
-  statLabel: {
-    color: colors.accent,
-    fontWeight: '600',
-    fontSize: 11,
-    textTransform: 'uppercase',
-  },
   filterRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
     gap: 8,
     marginBottom: spacing.md,
+    paddingRight: spacing.md,
   },
   filterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
     borderWidth: 1,
     borderColor: colors.inputBorder,
     borderRadius: radius.md,
     paddingHorizontal: 10,
     paddingVertical: 7,
     backgroundColor: colors.surface,
+    gap: 6,
   },
   filterChipActive: {
     borderColor: colors.accent,
@@ -161,6 +169,26 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   filterLabelActive: {
+    color: colors.accent,
+  },
+  countBadge: {
+    minWidth: 18,
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 999,
+    backgroundColor: '#EAECEF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  countBadgeActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  countLabel: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  countLabelActive: {
     color: colors.accent,
   },
   listContent: {
