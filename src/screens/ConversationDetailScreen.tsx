@@ -42,6 +42,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     addVisitNote,
     connectConversationRealtime,
     isRemoteMode,
+    currentUser,
   } = useAppStore();
 
   const realtimeClientRef = useRef<ChatRealtimeClient | null>(null);
@@ -52,6 +53,8 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   const [selectedPhotoUri, setSelectedPhotoUri] = useState<string | undefined>();
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
   const [realtimeError, setRealtimeError] = useState<string | null>(null);
+  const canManageConversation =
+    currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
 
   const conversation = useMemo(
     () => conversations.find((item) => item.id === conversationId),
@@ -93,7 +96,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     let active = true;
 
     const connect = async () => {
-      if (!isRemoteMode) {
+      if (!isRemoteMode || !canManageConversation) {
         return;
       }
 
@@ -132,7 +135,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
       realtimeClientRef.current?.close();
       realtimeClientRef.current = null;
     };
-  }, [connectConversationRealtime, conversationId, isRemoteMode]);
+  }, [canManageConversation, connectConversationRealtime, conversationId, isRemoteMode]);
 
   if (!conversation) {
     return (
@@ -145,6 +148,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   const isClosed = conversation.status === 'closed';
 
   const onAssign = async () => {
+    if (!canManageConversation) {
+      Alert.alert('Restricted action', 'Only PM/Admin users can accept handoff.');
+      return;
+    }
+
     try {
       await assignConversation(conversation.id);
       markConversationRead(conversation.id);
@@ -167,6 +175,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   };
 
   const onCloseConversation = () => {
+    if (!canManageConversation) {
+      Alert.alert('Restricted action', 'Only PM/Admin users can close chats.');
+      return;
+    }
+
     Alert.alert('Close conversation', 'Are you sure you want to close this chat?', [
       { text: 'Cancel', style: 'cancel' },
       {
@@ -235,6 +248,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   };
 
   const saveVisitNote = async () => {
+    if (!canManageConversation) {
+      Alert.alert('Restricted action', 'Only PM/Admin users can add site visit notes.');
+      return;
+    }
+
     if (!note.trim()) {
       Alert.alert('Note required', 'Please add a site visit note before saving.');
       return;
@@ -260,6 +278,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   };
 
   const onUpdateStatus = async (requestId: string, status: MaintenanceStatus) => {
+    if (!canManageConversation) {
+      Alert.alert('Restricted action', 'Only PM/Admin users can update maintenance status.');
+      return;
+    }
+
     try {
       await updateMaintenanceStatus(requestId, status);
     } catch (error) {
@@ -290,28 +313,30 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           </Text>
           <Text style={styles.address}>{conversation.property.address}</Text>
 
-          <View style={styles.contextActions}>
-            {conversation.status === 'new' && (
-              <PrimaryButton label="Accept Handoff" onPress={onAssign} />
-            )}
-            <PrimaryButton
-              label="Open Property in Dataverse"
-              onPress={() => openExternalUrl(conversation.property.dataverseUrl)}
-              variant="outline"
-            />
-            <PrimaryButton
-              label="Open Unit in Dataverse"
-              onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
-              variant="outline"
-            />
-            {conversation.dataverseCaseUrl && (
+          {canManageConversation && (
+            <View style={styles.contextActions}>
+              {conversation.status === 'new' && (
+                <PrimaryButton label="Accept Handoff" onPress={onAssign} />
+              )}
               <PrimaryButton
-                label="Open Related Case"
-                onPress={() => openExternalUrl(conversation.dataverseCaseUrl!)}
+                label="Open Property in Dataverse"
+                onPress={() => openExternalUrl(conversation.property.dataverseUrl)}
                 variant="outline"
               />
-            )}
-          </View>
+              <PrimaryButton
+                label="Open Unit in Dataverse"
+                onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
+                variant="outline"
+              />
+              {conversation.dataverseCaseUrl && (
+                <PrimaryButton
+                  label="Open Related Case"
+                  onPress={() => openExternalUrl(conversation.dataverseCaseUrl!)}
+                  variant="outline"
+                />
+              )}
+            </View>
+          )}
         </View>
 
         {conversation.botEscalated && !isClosed && (
@@ -332,7 +357,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Messages</Text>
-          {!isClosed && (
+          {canManageConversation && !isClosed && (
             <Pressable onPress={onCloseConversation}>
               <Text style={styles.closeText}>Close chat</Text>
             </Pressable>
@@ -360,10 +385,15 @@ export const ConversationDetailScreen = ({ route }: Props) => {
                 key={request.id}
                 compact
                 item={request}
-                readOnly={isClosed}
+                readOnly={!canManageConversation || isClosed}
                 propertyName={conversation.property.name}
                 unitLabel={conversation.unit.label}
-                onOpenDataverse={() => openExternalUrl(request.dataverseUrl)}
+                showDataverseLink={canManageConversation}
+                onOpenDataverse={
+                  canManageConversation
+                    ? () => openExternalUrl(request.dataverseUrl)
+                    : undefined
+                }
                 onStatusChange={(status) => onUpdateStatus(request.id, status)}
               />
             ))
@@ -373,22 +403,24 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
       {!isClosed ? (
         <View style={styles.composerWrap}>
-          <View style={styles.topComposerRow}>
-            <Pressable
-              onPress={() => setIsNoteModalVisible(true)}
-              style={styles.noteButton}
-            >
-              <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
-              <Text style={styles.noteButtonLabel}>Add site note + photo</Text>
-            </Pressable>
-          </View>
+          {canManageConversation && (
+            <View style={styles.topComposerRow}>
+              <Pressable
+                onPress={() => setIsNoteModalVisible(true)}
+                style={styles.noteButton}
+              >
+                <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
+                <Text style={styles.noteButtonLabel}>Add site note + photo</Text>
+              </Pressable>
+            </View>
+          )}
 
           <View style={styles.messageComposer}>
             <TextInput
               style={styles.input}
               value={draft}
               onChangeText={setDraft}
-              placeholder="Reply to visitor..."
+              placeholder={canManageConversation ? 'Reply to visitor...' : 'Add a message update...'}
               placeholderTextColor="#8D9AA5"
               multiline
             />

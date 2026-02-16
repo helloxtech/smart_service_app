@@ -1,38 +1,100 @@
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Alert, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 
 export const RoleProfileScreen = () => {
-  const { currentUser, signOut } = useAppStore();
+  const { currentUser, signOut, updateProfile } = useAppStore();
   const insets = useSafeAreaInsets();
+  const [name, setName] = useState(currentUser?.name ?? '');
+  const [email, setEmail] = useState(currentUser?.email ?? '');
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    setName(currentUser?.name ?? '');
+    setEmail(currentUser?.email ?? '');
+  }, [currentUser?.email, currentUser?.name]);
+
+  const roleLabel = useMemo(() => {
+    if (!currentUser?.role) return 'Unknown';
+    return currentUser.role === 'Supervisor' ? 'Admin' : currentUser.role;
+  }, [currentUser?.role]);
+
+  const accessScope = useMemo(() => {
+    if (currentUser?.role === 'Landlord') {
+      return 'You can monitor portfolio requests, follow tenant conversations, and track request progress for your properties.';
+    }
+
+    if (currentUser?.role === 'Tenant') {
+      return 'You can track your maintenance requests, view updates, and message the service team from one place.';
+    }
+
+    if (currentUser?.role === 'Supervisor') {
+      return 'Admin scope includes PM operations, escalation handling, and workflow oversight across conversations and maintenance queues.';
+    }
+
+    return 'PM scope includes live chat response, maintenance status updates, and site visit note capture.';
+  }, [currentUser?.role]);
+
+  const onSave = async () => {
+    try {
+      setIsSaving(true);
+      await updateProfile({
+        name,
+        email,
+      });
+      Alert.alert('Profile updated', 'Your profile changes were saved in this app session.');
+    } catch (error) {
+      Alert.alert('Unable to update profile', (error as Error).message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <Text style={styles.title}>Account</Text>
-      <Text style={styles.subtitle}>Role-aware access and quick session controls.</Text>
+      <Text style={styles.subtitle}>Update your contact profile and session settings.</Text>
 
       <View style={styles.card}>
         <Text style={styles.label}>Name</Text>
-        <Text style={styles.value}>{currentUser?.name ?? 'Unknown'}</Text>
+        <TextInput
+          style={styles.input}
+          value={name}
+          onChangeText={setName}
+          placeholder="Your name"
+          placeholderTextColor="#8D9AA5"
+          autoCapitalize="words"
+        />
 
         <Text style={styles.label}>Email</Text>
-        <Text style={styles.value}>{currentUser?.email ?? 'Unknown'}</Text>
+        <TextInput
+          style={styles.input}
+          value={email}
+          onChangeText={setEmail}
+          placeholder="name@example.com"
+          placeholderTextColor="#8D9AA5"
+          autoCapitalize="none"
+          keyboardType="email-address"
+        />
 
         <Text style={styles.label}>Role</Text>
-        <Text style={styles.value}>{currentUser?.role ?? 'Unknown'}</Text>
+        <Text style={styles.value}>{roleLabel}</Text>
       </View>
 
       <View style={styles.card}>
         <Text style={styles.helpTitle}>Access scope</Text>
-        <Text style={styles.helpBody}>
-          PM/Supervisor can perform operational updates. Tenant/Landlord views are optimized for
-          tracking, communication, and role-specific read access.
-        </Text>
+        <Text style={styles.helpBody}>{accessScope}</Text>
       </View>
 
+      <PrimaryButton
+        label="Save profile"
+        onPress={() => void onSave()}
+        disabled={isSaving}
+        loading={isSaving}
+      />
       <PrimaryButton label="Sign out" onPress={signOut} variant="outline" />
     </View>
   );
@@ -73,6 +135,15 @@ const styles = StyleSheet.create({
     color: colors.textPrimary,
     fontSize: typography.body,
     fontWeight: '700',
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    minHeight: 46,
+    paddingHorizontal: 12,
+    color: colors.textPrimary,
+    backgroundColor: '#FAFCFD',
   },
   helpTitle: {
     color: colors.textPrimary,

@@ -2,12 +2,17 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { InboxScreen } from '../screens/InboxScreen';
 import { ConversationDetailScreen } from '../screens/ConversationDetailScreen';
+import { RoleDashboardScreen } from '../screens/RoleDashboardScreen';
 import { InboxStackParamList } from './types';
 import { colors } from '../theme/theme';
+import { useAppStore } from '../store/AppStore';
 
 const Stack = createNativeStackNavigator<InboxStackParamList>();
 
 export const InboxStackNavigator = () => {
+  const { currentUser } = useAppStore();
+  const isPmWorkflow = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -18,9 +23,9 @@ export const InboxStackNavigator = () => {
     >
       <Stack.Screen
         name="Inbox"
-        component={InboxScreen}
+        component={isPmWorkflow ? InboxScreen : RoleDashboardScreen}
         options={{
-          title: 'Smart Service',
+          title: isPmWorkflow ? 'Smart Service' : 'Home',
           headerShown: false,
         }}
       />

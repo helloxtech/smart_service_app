@@ -5,7 +5,6 @@ import { MainTabParamList } from './types';
 import { InboxStackNavigator } from './InboxStackNavigator';
 import { MaintenanceScreen } from '../screens/MaintenanceScreen';
 import { VisitsScreen } from '../screens/VisitsScreen';
-import { RoleDashboardScreen } from '../screens/RoleDashboardScreen';
 import { RoleProfileScreen } from '../screens/RoleProfileScreen';
 import { colors } from '../theme/theme';
 import { useAppStore } from '../store/AppStore';
@@ -58,7 +57,7 @@ export const MainTabNavigator = () => {
     >
       <Tab.Screen
         name="InboxTab"
-        component={isPmWorkflow ? InboxStackNavigator : RoleDashboardScreen}
+        component={InboxStackNavigator}
         options={{
           title: isPmWorkflow ? 'Inbox' : 'Home',
         }}

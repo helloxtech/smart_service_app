@@ -7,6 +7,7 @@ import {
   View,
   Pressable,
 } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/EmptyState';
 import { MaintenanceCard } from '../components/MaintenanceCard';
@@ -25,6 +26,7 @@ const filters: Array<{ label: string; value: MaintenanceStatus | 'all' }> = [
 export const MaintenanceScreen = () => {
   const { maintenanceRequests, updateMaintenanceStatus, conversations, currentUser } = useAppStore();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
   const [activeFilter, setActiveFilter] = useState<MaintenanceStatus | 'all'>('all');
   const canEditStatus = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
 
@@ -60,13 +62,46 @@ export const MaintenanceScreen = () => {
     return map;
   }, [conversations]);
 
+  const conversationByRequestId = useMemo(() => {
+    const map = new Map<string, string>();
+    maintenanceRequests.forEach((request) => {
+      if (request.conversationId) {
+        map.set(request.id, request.conversationId);
+        return;
+      }
+
+      const related = conversations.find(
+        (item) =>
+          item.property.id === request.propertyId
+          && item.unit.id === request.unitId,
+      );
+      if (related) {
+        map.set(request.id, related.id);
+      }
+    });
+    return map;
+  }, [conversations, maintenanceRequests]);
+
+  const openRequestDetails = (requestId: string, dataverseUrl: string) => {
+    const conversationId = conversationByRequestId.get(requestId);
+    if (conversationId) {
+      navigation.navigate('InboxTab', {
+        screen: 'ConversationDetail',
+        params: { conversationId },
+      });
+      return;
+    }
+
+    void openExternalUrl(dataverseUrl);
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <Text style={styles.title}>Maintenance</Text>
       <Text style={styles.subtitle}>
         {canEditStatus
           ? 'Review details in app. Status changes require tapping Edit status.'
-          : 'Track request details and progress updates in app.'}
+          : 'Tap a request card to view details and conversation context.'}
       </Text>
 
       <View style={styles.filterRow}>
@@ -99,6 +134,7 @@ export const MaintenanceScreen = () => {
               item={item}
               propertyName={propertyById.get(item.propertyId)}
               unitLabel={unitById.get(item.unitId)}
+              onPress={() => openRequestDetails(item.id, item.dataverseUrl)}
               readOnly={!canEditStatus}
               showDataverseLink={canEditStatus}
               onOpenDataverse={

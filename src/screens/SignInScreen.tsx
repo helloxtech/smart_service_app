@@ -29,7 +29,7 @@ const openExternalUrl = async (url: string) => {
 };
 
 export const SignInScreen = () => {
-  const { signIn } = useAppStore();
+  const { signIn, signInWithMicrosoft } = useAppStore();
 
   const [email, setEmail] = useState('alex.chen@rentalsmart.ca');
   const [password, setPassword] = useState('');
@@ -76,19 +76,20 @@ export const SignInScreen = () => {
   };
 
   const onPressMicrosoft = async () => {
-    const ssoUrl = process.env.EXPO_PUBLIC_MS_LOGIN_URL;
-    if (!ssoUrl) {
-      Alert.alert(
-        'Microsoft sign-in',
-        'Microsoft SSO is not configured yet. Please sign in with email and password.',
-      );
+    setEmailTouched(true);
+
+    if (!emailValid) {
+      Alert.alert('Microsoft sign-in', 'Enter your internal work email to continue.');
       return;
     }
 
     try {
-      await openExternalUrl(ssoUrl);
+      setIsSubmitting(true);
+      await signInWithMicrosoft(trimmedEmail);
     } catch (error) {
-      Alert.alert('Unable to open sign-in', (error as Error).message);
+      Alert.alert('Microsoft sign-in failed', (error as Error).message);
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -204,7 +205,7 @@ export const SignInScreen = () => {
             />
 
             <Text style={styles.helper}>
-              Role is assigned automatically from your contact profile.
+              Microsoft sign-in is for internal PM users. Email sign-in supports all portal roles.
             </Text>
           </View>
 

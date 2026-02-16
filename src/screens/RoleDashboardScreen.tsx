@@ -1,32 +1,86 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ConversationCard } from '../components/ConversationCard';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
+import { openExternalUrl } from '../utils/linking';
+
+type PropertySummary = {
+  id: string;
+  name: string;
+  dataverseUrl: string;
+};
 
 export const RoleDashboardScreen = () => {
   const { currentUser, maintenanceRequests, conversations } = useAppStore();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
 
   const role = currentUser?.role;
   const isTenant = role === 'Tenant';
   const isLandlord = role === 'Landlord';
+  const isAdmin = role === 'Supervisor';
 
-  const propertyNames = useMemo(
-    () => Array.from(new Set(conversations.map((item) => item.property.name))),
+  const properties = useMemo<PropertySummary[]>(
+    () =>
+      Array.from(
+        conversations.reduce((map, item) => {
+          map.set(item.property.id, {
+            id: item.property.id,
+            name: item.property.name,
+            dataverseUrl: item.property.dataverseUrl,
+          });
+          return map;
+        }, new Map<string, PropertySummary>()).values(),
+      ),
     [conversations],
   );
 
+  const activeConversations = useMemo(
+    () =>
+      [...conversations]
+        .filter((item) => item.status !== 'closed')
+        .sort(
+          (a, b) =>
+            new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
+        ),
+    [conversations],
+  );
+
+  const escalatedConversation = activeConversations.find((item) => item.botEscalated);
+
   const openRequests = maintenanceRequests.filter((item) => item.status !== 'done').length;
-  const activeChats = conversations.filter((item) => item.status !== 'closed').length;
+  const activeChats = activeConversations.length;
   const pendingHandoffs = conversations.filter((item) => item.botEscalated).length;
 
-  const heading = isTenant ? 'Tenant Home' : isLandlord ? 'Landlord Home' : 'Workspace';
+  const heading = isTenant
+    ? 'Tenant Home'
+    : isLandlord
+      ? 'Landlord Home'
+      : isAdmin
+        ? 'Admin Home'
+        : 'Workspace';
   const subtitle = isTenant
     ? 'Track request progress and chat updates for your unit.'
     : isLandlord
       ? 'Monitor service demand and tenant conversations across your portfolio.'
-      : 'Role-based dashboard.';
+      : isAdmin
+        ? 'Oversee portfolio requests and escalation flow.'
+        : 'Role-based dashboard.';
+
+  const openConversation = (conversationId: string) => {
+    navigation.navigate('ConversationDetail', { conversationId });
+  };
+
+  const openMaintenanceTab = () => {
+    navigation.getParent()?.navigate('MaintenanceTab');
+  };
+
+  const openProperty = (property: PropertySummary) => {
+    void openExternalUrl(property.dataverseUrl);
+  };
 
   return (
     <ScrollView
@@ -37,46 +91,93 @@ export const RoleDashboardScreen = () => {
       <Text style={styles.subtitle}>{subtitle}</Text>
 
       <View style={styles.metricGrid}>
-        <View style={styles.metricCard}>
+        <Pressable style={styles.metricCard} onPress={openMaintenanceTab}>
           <Text style={styles.metricValue}>{openRequests}</Text>
           <Text style={styles.metricLabel}>Open Requests</Text>
-        </View>
-        <View style={styles.metricCard}>
+        </Pressable>
+        <Pressable
+          style={styles.metricCard}
+          onPress={() => {
+            const first = activeConversations[0];
+            if (!first) return;
+            openConversation(first.id);
+          }}
+        >
           <Text style={styles.metricValue}>{activeChats}</Text>
           <Text style={styles.metricLabel}>Active Chats</Text>
-        </View>
-        <View style={styles.metricCard}>
-          <Text style={styles.metricValue}>{propertyNames.length}</Text>
+        </Pressable>
+        <Pressable
+          style={styles.metricCard}
+          onPress={() => {
+            const first = properties[0];
+            if (!first) return;
+            openProperty(first);
+          }}
+        >
+          <Text style={styles.metricValue}>{properties.length}</Text>
           <Text style={styles.metricLabel}>{isTenant ? 'Linked Properties' : 'Portfolio Sites'}</Text>
-        </View>
-        <View style={styles.metricCard}>
+        </Pressable>
+        <Pressable
+          style={styles.metricCard}
+          onPress={() => {
+            if (!escalatedConversation) return;
+            openConversation(escalatedConversation.id);
+          }}
+        >
           <Text style={styles.metricValue}>{pendingHandoffs}</Text>
           <Text style={styles.metricLabel}>PM Handoff Alerts</Text>
-        </View>
+        </Pressable>
       </View>
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>
-          {isTenant ? 'What you can do' : isLandlord ? 'Owner workflow' : 'Overview'}
+          {isTenant ? 'What you can do' : isLandlord ? 'Owner workflow' : isAdmin ? 'Admin workflow' : 'Overview'}
         </Text>
         <Text style={styles.cardBody}>
           {isTenant
             ? 'View your request statuses, add message context, and follow updates without needing Dataverse access.'
             : isLandlord
               ? 'Track request load and tenant communication from one place. Escalate only when deeper record detail is required.'
-              : 'Use tabs below to continue.'}
+              : isAdmin
+                ? 'Review incoming demand, open maintenance queues, and coordinate PM handoff response.'
+                : 'Use tabs below to continue.'}
         </Text>
       </View>
 
       <View style={styles.card}>
+        <View style={styles.cardHeaderRow}>
+          <Text style={styles.cardTitle}>Recent conversations</Text>
+          <Pressable onPress={openMaintenanceTab}>
+            <Text style={styles.linkLabel}>View requests</Text>
+          </Pressable>
+        </View>
+        {activeConversations.length === 0 ? (
+          <Text style={styles.cardBody}>No active conversations right now.</Text>
+        ) : (
+          activeConversations.slice(0, 3).map((conversation) => (
+            <ConversationCard
+              key={conversation.id}
+              conversation={conversation}
+              onPress={() => openConversation(conversation.id)}
+            />
+          ))
+        )}
+      </View>
+
+      <View style={styles.card}>
         <Text style={styles.cardTitle}>Properties in view</Text>
-        {propertyNames.length === 0 ? (
+        {properties.length === 0 ? (
           <Text style={styles.cardBody}>No property data available yet.</Text>
         ) : (
-          propertyNames.map((name) => (
-            <View key={name} style={styles.propertyRow}>
-              <Text style={styles.propertyText}>{name}</Text>
-            </View>
+          properties.map((property) => (
+            <Pressable
+              key={property.id}
+              style={styles.propertyRow}
+              onPress={() => openProperty(property)}
+            >
+              <Text style={styles.propertyText}>{property.name}</Text>
+              <Text style={styles.propertyAction}>Open</Text>
+            </Pressable>
           ))
         )}
       </View>
@@ -142,12 +243,25 @@ const styles = StyleSheet.create({
     fontSize: typography.heading,
     fontWeight: '800',
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  linkLabel: {
+    color: '#2457A5',
+    fontSize: typography.small,
+    fontWeight: '700',
+  },
   cardBody: {
     color: colors.textSecondary,
     fontSize: typography.small,
     lineHeight: 20,
   },
   propertyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
@@ -158,6 +272,11 @@ const styles = StyleSheet.create({
   propertyText: {
     color: colors.textPrimary,
     fontSize: typography.small,
+    fontWeight: '700',
+  },
+  propertyAction: {
+    color: '#2457A5',
+    fontSize: 12,
     fontWeight: '700',
   },
 });

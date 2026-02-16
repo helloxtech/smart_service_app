@@ -9,6 +9,7 @@ interface MaintenanceCardProps {
   item: MaintenanceRequest;
   onOpenDataverse?: () => void;
   onStatusChange: (status: MaintenanceStatus) => void;
+  onPress?: () => void;
   compact?: boolean;
   readOnly?: boolean;
   propertyName?: string;
@@ -22,6 +23,7 @@ export const MaintenanceCard = ({
   item,
   onOpenDataverse,
   onStatusChange,
+  onPress,
   compact = false,
   readOnly = false,
   propertyName,
@@ -43,22 +45,46 @@ export const MaintenanceCard = ({
 
   return (
     <View style={[styles.card, compact && styles.compact]}>
-      <View style={styles.headerRow}>
-        <View style={styles.titleWrap}>
-          <Text style={styles.title}>{item.title}</Text>
-          <Text style={styles.summary}>{item.summary}</Text>
-        </View>
-        <StatusBadge status={item.status} />
-      </View>
+      {onPress ? (
+        <Pressable onPress={onPress} style={styles.detailTapArea}>
+          <View style={styles.headerRow}>
+            <View style={styles.titleWrap}>
+              <Text style={styles.title}>{item.title}</Text>
+              <Text style={styles.summary}>{item.summary}</Text>
+            </View>
+            <StatusBadge status={item.status} />
+          </View>
 
-      <View style={styles.metaWrap}>
-        <Text style={styles.metaText}>
-          {propertyName ?? item.propertyId} · {unitLabel ?? item.unitId}
-        </Text>
-        <Text style={styles.metaText}>Priority: {item.priority.toUpperCase()}</Text>
-      </View>
+          <View style={styles.metaWrap}>
+            <Text style={styles.metaText}>
+              {propertyName ?? item.propertyId} · {unitLabel ?? item.unitId}
+            </Text>
+            <Text style={styles.metaText}>Priority: {item.priority.toUpperCase()}</Text>
+          </View>
 
-      <Text style={styles.updated}>Updated {formatRelativeTime(item.updatedAt)}</Text>
+          <Text style={styles.updated}>Updated {formatRelativeTime(item.updatedAt)}</Text>
+          <Text style={styles.tapHint}>Tap to open full details</Text>
+        </Pressable>
+      ) : (
+        <>
+          <View style={styles.headerRow}>
+            <View style={styles.titleWrap}>
+              <Text style={styles.title}>{item.title}</Text>
+              <Text style={styles.summary}>{item.summary}</Text>
+            </View>
+            <StatusBadge status={item.status} />
+          </View>
+
+          <View style={styles.metaWrap}>
+            <Text style={styles.metaText}>
+              {propertyName ?? item.propertyId} · {unitLabel ?? item.unitId}
+            </Text>
+            <Text style={styles.metaText}>Priority: {item.priority.toUpperCase()}</Text>
+          </View>
+
+          <Text style={styles.updated}>Updated {formatRelativeTime(item.updatedAt)}</Text>
+        </>
+      )}
 
       {readOnly ? (
         <Text style={styles.readOnlyLabel}>Status is view only for this record.</Text>
@@ -116,6 +142,11 @@ const styles = StyleSheet.create({
   compact: {
     marginBottom: spacing.sm,
   },
+  detailTapArea: {
+    borderRadius: radius.md,
+    padding: 2,
+    gap: spacing.sm,
+  },
   headerRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -139,6 +170,11 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '500',
+  },
+  tapHint: {
+    color: '#2457A5',
+    fontSize: 12,
+    fontWeight: '700',
   },
   metaWrap: {
     gap: 2,

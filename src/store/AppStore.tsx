@@ -38,6 +38,11 @@ interface AddVisitNoteInput {
   photoUri?: string;
 }
 
+interface UpdateProfileInput {
+  name: string;
+  email: string;
+}
+
 interface AppStoreValue {
   currentUser: PmUser | null;
   conversations: Conversation[];
@@ -46,7 +51,9 @@ interface AppStoreValue {
   visitNotes: SiteVisitNote[];
   isRemoteMode: boolean;
   signIn: (email: string, password: string) => Promise<void>;
+  signInWithMicrosoft: (emailHint?: string) => Promise<void>;
   signOut: () => void;
+  updateProfile: (payload: UpdateProfileInput) => Promise<void>;
   markConversationRead: (conversationId: string) => void;
   assignConversation: (conversationId: string) => Promise<void>;
   sendMessage: (conversationId: string, text: string) => Promise<void>;
@@ -215,6 +222,41 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setVisitNotes(bootstrap.visitNotes);
   }, []);
 
+  const signInWithMicrosoft = useCallback(async (emailHint?: string) => {
+    const normalizedEmailHint = emailHint?.trim().toLowerCase();
+
+    if (runtimeConfig.useMockData) {
+      const fallbackEmail = normalizedEmailHint || 'pm@rentalsmart.ca';
+      const displayName = formatDisplayName(fallbackEmail);
+
+      setApiAuthToken(null);
+      setCurrentUser({
+        ...mockPmUser,
+        name: displayName,
+        email: fallbackEmail,
+        role: 'PM',
+      });
+      setConversations(initialConversations);
+      setMessages(mockMessages);
+      setMaintenanceRequests(mockMaintenanceRequests);
+      setVisitNotes(mockVisitNotes);
+      return;
+    }
+
+    const session = await remoteApi.signInWithMicrosoft({
+      email: normalizedEmailHint,
+      name: normalizedEmailHint ? formatDisplayName(normalizedEmailHint) : undefined,
+    });
+    setApiAuthToken(session.accessToken);
+    setCurrentUser(session.user);
+
+    const bootstrap = await remoteApi.getBootstrap();
+    setConversations(sortConversations(bootstrap.conversations));
+    setMessages(bootstrap.messages);
+    setMaintenanceRequests(bootstrap.maintenanceRequests);
+    setVisitNotes(bootstrap.visitNotes);
+  }, []);
+
   const signOut = useCallback(() => {
     setApiAuthToken(null);
     setCurrentUser(null);
@@ -223,6 +265,29 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setMaintenanceRequests(mockMaintenanceRequests);
     setVisitNotes(mockVisitNotes);
   }, []);
+
+  const updateProfile = useCallback(
+    async (payload: UpdateProfileInput) => {
+      if (!currentUser) {
+        throw new Error('Please sign in before updating your profile.');
+      }
+
+      const name = payload.name.trim();
+      const email = payload.email.trim().toLowerCase();
+
+      if (!name) {
+        throw new Error('Name is required.');
+      }
+
+      if (!email || !email.includes('@')) {
+        throw new Error('A valid email is required.');
+      }
+
+      // Mobile profile writes are currently local-only until a dedicated profile endpoint is added.
+      setCurrentUser((prev) => (prev ? { ...prev, name, email } : prev));
+    },
+    [currentUser],
+  );
 
   const assignConversation = useCallback(
     async (conversationId: string) => {
@@ -280,6 +345,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
       const body = text.trim();
       let message: Message | null = null;
+      const actingAsPm = isPmRole(currentUser.role);
 
       if (!runtimeConfig.useMockData) {
         message = await remoteApi.sendMessage(conversationId, body);
@@ -292,7 +358,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         message ?? {
           id: `msg-${Date.now()}`,
           conversationId,
-          senderType: 'pm',
+          senderType: actingAsPm ? 'pm' : 'visitor',
           senderName: currentUser.name,
           body,
           createdAt: now,
@@ -305,8 +371,14 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
             item.id === conversationId
               ? {
                   ...item,
-                  status: item.status === 'new' ? 'assigned' : item.status,
-                  assignedPmId: currentUser.id,
+                  status: actingAsPm
+                    ? item.status === 'new'
+                      ? 'assigned'
+                      : item.status
+                    : item.status === 'closed'
+                      ? 'closed'
+                      : 'waiting',
+                  assignedPmId: actingAsPm ? currentUser.id : item.assignedPmId,
                   lastMessageAt: now,
                   unreadCount: 0,
                 }
@@ -319,6 +391,10 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   );
 
   const closeConversation = useCallback(async (conversationId: string) => {
+    if (!isPmRole(currentUser?.role)) {
+      throw new Error('Only PM/Supervisor can close conversations.');
+    }
+
     if (!runtimeConfig.useMockData) {
       await remoteApi.closeConversation(conversationId);
     }
@@ -351,7 +427,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         createdAt: now,
       },
     ]);
-  }, []);
+  }, [currentUser?.role]);
 
   const updateMaintenanceStatus = useCallback(
     async (requestId: string, status: MaintenanceStatus) => {
@@ -386,6 +462,10 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   );
 
   const addVisitNote = useCallback(async (payload: AddVisitNoteInput) => {
+    if (!isPmRole(currentUser?.role)) {
+      throw new Error('Only PM/Supervisor can add site visit notes.');
+    }
+
     if (!payload.note.trim()) {
       throw new Error('Please add note details before saving.');
     }
@@ -436,10 +516,14 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         ),
       );
     }
-  }, []);
+  }, [currentUser?.role]);
 
   const connectConversationRealtime = useCallback(
     async (conversationId: string, onError?: (message: string) => void) => {
+      if (!isPmRole(currentUser?.role)) {
+        return null;
+      }
+
       if (runtimeConfig.useMockData) {
         return null;
       }
@@ -461,7 +545,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         onError,
       });
     },
-    [applyRealtimeMessage],
+    [applyRealtimeMessage, currentUser?.role],
   );
 
   const value = useMemo(
@@ -473,7 +557,9 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       visitNotes,
       isRemoteMode,
       signIn,
+      signInWithMicrosoft,
       signOut,
+      updateProfile,
       markConversationRead,
       assignConversation,
       sendMessage,
@@ -495,7 +581,9 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       messages,
       sendMessage,
       signIn,
+      signInWithMicrosoft,
       signOut,
+      updateProfile,
       updateMaintenanceStatus,
       visitNotes,
     ],

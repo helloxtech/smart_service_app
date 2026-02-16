@@ -13,6 +13,11 @@ export interface SignInResponse {
   accessToken: string;
 }
 
+interface MicrosoftSignInRequest {
+  email?: string;
+  name?: string;
+}
+
 export interface BootstrapResponse {
   conversations: Conversation[];
   messages: Message[];
@@ -39,6 +44,9 @@ export const remoteApi = {
       email,
       password,
     }),
+
+  signInWithMicrosoft: (payload: MicrosoftSignInRequest) =>
+    api.post<SignInResponse>('/mobile/pm/auth/microsoft', payload),
 
   getBootstrap: () => api.get<BootstrapResponse>('/mobile/pm/bootstrap'),
 
