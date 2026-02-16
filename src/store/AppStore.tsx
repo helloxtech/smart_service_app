@@ -277,6 +277,32 @@ const buildMockProfile = (
   };
 };
 
+const DEFAULT_WORKORDER_URL_PREFIX =
+  'https://org.crm.dynamics.com/main.aspx?etn=msdyn_workorder&pagetype=entityrecord&id=';
+
+const summarizeMaintenanceText = (value: string, maxLength: number): string => {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) {
+    return '';
+  }
+  if (normalized.length <= maxLength) {
+    return normalized;
+  }
+  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
+};
+
+const buildMaintenanceTitleFromNote = (note: string): string => {
+  const firstSentence = note.split(/[.!?]/)[0] ?? '';
+  const compact = summarizeMaintenanceText(firstSentence, 62);
+  if (compact.length >= 12) {
+    return compact;
+  }
+  return 'Site visit follow-up';
+};
+
+const buildMaintenanceSummaryFromNote = (note: string): string =>
+  summarizeMaintenanceText(note, 140) || 'Follow-up required from site visit.';
+
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
   const [conversations, setConversations] =
@@ -763,11 +789,40 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     }
 
     const now = new Date().toISOString();
+    const ensureMaintenanceRequestInState = (requestId?: string): string => {
+      const resolvedId =
+        requestId?.trim() || `mnt-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+      setMaintenanceRequests((prev) => {
+        if (prev.some((item) => item.id === resolvedId)) {
+          return prev;
+        }
+
+        const created: MaintenanceRequest = {
+          id: resolvedId,
+          propertyId: payload.propertyId,
+          unitId: payload.unitId,
+          title: buildMaintenanceTitleFromNote(payload.note),
+          summary: buildMaintenanceSummaryFromNote(payload.note),
+          status: 'new',
+          priority: 'medium',
+          dataverseUrl: `${DEFAULT_WORKORDER_URL_PREFIX}${resolvedId}`,
+          updatedAt: now,
+        };
+        return [created, ...prev];
+      });
+      return resolvedId;
+    };
 
     if (!runtimeConfig.useMockData) {
       const saved = await remoteApi.addVisitNote(payload);
+      const resolvedMaintenanceRequestId =
+        saved.maintenanceRequestId?.trim() || ensureMaintenanceRequestInState();
+
+      ensureMaintenanceRequestInState(resolvedMaintenanceRequestId);
+
       applyMaintenanceNoteState({
         ...saved,
+        maintenanceRequestId: resolvedMaintenanceRequestId,
         source: saved.source ?? 'visit',
         authorName: saved.authorName ?? actingUser.name,
       });
@@ -775,11 +830,15 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       return;
     }
 
+    const resolvedMaintenanceRequestId = payload.maintenanceRequestId
+      ? ensureMaintenanceRequestInState(payload.maintenanceRequestId)
+      : ensureMaintenanceRequestInState();
+
     const note: SiteVisitNote = {
       id: `visit-${Date.now()}`,
       propertyId: payload.propertyId,
       unitId: payload.unitId,
-      maintenanceRequestId: payload.maintenanceRequestId,
+      maintenanceRequestId: resolvedMaintenanceRequestId,
       note: payload.note,
       photoUri: payload.photoUri,
       source: 'visit',

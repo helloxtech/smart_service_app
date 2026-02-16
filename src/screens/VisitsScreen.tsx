@@ -54,6 +54,7 @@ export const VisitsScreen = () => {
   const [note, setNote] = useState('');
   const [photoUri, setPhotoUri] = useState<string | undefined>();
   const [selectedRecentNoteId, setSelectedRecentNoteId] = useState<string | undefined>();
+  const [recentUnitKeys, setRecentUnitKeys] = useState<string[]>([]);
 
   const selectedUnit = unitOptions.find(
     (option) => `${option.propertyId}-${option.unitId}` === selectedUnitKey,
@@ -85,9 +86,26 @@ export const VisitsScreen = () => {
     return map;
   }, [unitOptions]);
 
+  const unitOptionByKey = useMemo(() => {
+    const map = new Map<string, UnitOption>();
+    unitOptions.forEach((option) => {
+      map.set(`${option.propertyId}-${option.unitId}`, option);
+    });
+    return map;
+  }, [unitOptions]);
+
   const recentUnitOptions = useMemo(() => {
     const seen = new Set<string>();
     const recent: UnitOption[] = [];
+
+    recentUnitKeys.forEach((key) => {
+      const option = unitOptionByKey.get(key);
+      if (!option || seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      recent.push(option);
+    });
 
     visitNotes
       .slice()
@@ -112,7 +130,7 @@ export const VisitsScreen = () => {
       });
 
     return recent.slice(0, 5);
-  }, [unitLabelByKey, visitNotes]);
+  }, [recentUnitKeys, unitLabelByKey, unitOptionByKey, visitNotes]);
 
   const maintenanceTitleById = useMemo(() => {
     const map = new Map<string, string>();
@@ -140,6 +158,13 @@ export const VisitsScreen = () => {
       setSelectedUnitKey(undefined);
     }
   }, [selectedUnitKey, unitOptions]);
+
+  useEffect(() => {
+    setRecentUnitKeys((prev) => {
+      const next = prev.filter((key) => unitOptionByKey.has(key));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [unitOptionByKey]);
 
   useEffect(() => {
     if (!selectedMaintenanceId) return;
@@ -218,6 +243,15 @@ export const VisitsScreen = () => {
     ]);
   };
 
+  const rememberRecentUnit = (unitKey: string) => {
+    setRecentUnitKeys((prev) => [unitKey, ...prev.filter((item) => item !== unitKey)].slice(0, 5));
+  };
+
+  const selectUnit = (unitKey: string) => {
+    setSelectedUnitKey(unitKey);
+    rememberRecentUnit(unitKey);
+  };
+
   const saveNote = async () => {
     if (!selectedUnit) {
       Alert.alert('Select unit', 'Please select a property/unit first.');
@@ -241,6 +275,7 @@ export const VisitsScreen = () => {
       setNote('');
       setPhotoUri(undefined);
       setSelectedMaintenanceId(undefined);
+      rememberRecentUnit(`${selectedUnit.propertyId}-${selectedUnit.unitId}`);
       Alert.alert('Saved', 'Site visit note saved successfully.');
     } catch (error) {
       Alert.alert('Unable to save note', (error as Error).message);
@@ -283,37 +318,44 @@ export const VisitsScreen = () => {
         </Text>
 
         <Text style={styles.secondaryLabel}>Search results</Text>
-        {unitSearch.trim().length < 2 ? (
-          <Text style={styles.emptyHint}>Type at least 2 characters to search units.</Text>
-        ) : (
-          <>
-            <View style={styles.pillWrap}>
-              {filteredUnitOptions.map((option) => {
-                const key = `${option.propertyId}-${option.unitId}`;
-                const selected = selectedUnitKey === key;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => setSelectedUnitKey(key)}
-                    style={[styles.pill, selected && styles.pillSelected]}
-                  >
-                    <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-            {filteredUnitOptions.length === 0 && (
-              <Text style={styles.emptyHint}>No property/unit matched your search.</Text>
-            )}
-            {unitSearchMatchCount > filteredUnitOptions.length && (
-              <Text style={styles.emptyHint}>
-                Showing first {filteredUnitOptions.length} of {unitSearchMatchCount} matches.
-              </Text>
-            )}
-          </>
-        )}
+        <View style={styles.searchResultPanel}>
+          {unitSearch.trim().length < 2 ? (
+            <Text style={styles.emptyHint}>Type at least 2 characters to search units.</Text>
+          ) : (
+            <>
+              <View style={styles.pillWrap}>
+                {filteredUnitOptions.map((option) => {
+                  const key = `${option.propertyId}-${option.unitId}`;
+                  const selected = selectedUnitKey === key;
+                  return (
+                    <Pressable
+                      key={key}
+                      onPress={() => selectUnit(key)}
+                      style={[
+                        styles.pill,
+                        styles.searchResultPill,
+                        selected && styles.pillSelected,
+                        selected && styles.searchResultPillSelected,
+                      ]}
+                    >
+                      <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                        {option.label}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              {filteredUnitOptions.length === 0 && (
+                <Text style={styles.emptyHint}>No property/unit matched your search.</Text>
+              )}
+              {unitSearchMatchCount > filteredUnitOptions.length && (
+                <Text style={styles.emptyHint}>
+                  Showing first {filteredUnitOptions.length} of {unitSearchMatchCount} matches.
+                </Text>
+              )}
+            </>
+          )}
+        </View>
 
         {recentUnitOptions.length > 0 && (
           <>
@@ -325,8 +367,8 @@ export const VisitsScreen = () => {
                 return (
                   <Pressable
                     key={key}
-                    onPress={() => setSelectedUnitKey(key)}
-                    style={[styles.pill, selected && styles.pillSelected]}
+                    onPress={() => selectUnit(key)}
+                    style={[styles.pill, styles.recentUnitPill, selected && styles.pillSelected]}
                   >
                     <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
                       {option.label}
@@ -351,7 +393,7 @@ export const VisitsScreen = () => {
           <>
             <Text style={styles.fieldLabel}>Related maintenance request (optional)</Text>
             <Text style={styles.fieldHint}>
-              Showing active requests only. Tap one request to link it. Tap again to clear selection.
+              Showing active requests only. Tap one request to link it. If none is selected, saving this site note will create a new request automatically.
             </Text>
 
             <View style={styles.requestOptions}>
@@ -560,6 +602,14 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 2,
   },
+  searchResultPanel: {
+    borderWidth: 1,
+    borderColor: '#B8E3CF',
+    borderRadius: radius.md,
+    backgroundColor: '#F2FBF7',
+    padding: 8,
+    gap: 8,
+  },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.inputBorder,
@@ -581,6 +631,16 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     paddingHorizontal: 10,
     backgroundColor: '#FAFCFD',
+  },
+  searchResultPill: {
+    borderColor: '#9ED5B9',
+    backgroundColor: '#FFFFFF',
+  },
+  searchResultPillSelected: {
+    borderColor: colors.accent,
+  },
+  recentUnitPill: {
+    backgroundColor: '#F7FAFC',
   },
   pillSelected: {
     borderColor: colors.accent,
