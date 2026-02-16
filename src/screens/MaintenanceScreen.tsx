@@ -1,5 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View, Pressable } from 'react-native';
+import {
+  Alert,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+  Pressable,
+} from 'react-native';
 import { EmptyState } from '../components/EmptyState';
 import { MaintenanceCard } from '../components/MaintenanceCard';
 import { useAppStore } from '../store/AppStore';
@@ -25,6 +32,14 @@ export const MaintenanceScreen = () => {
 
     return maintenanceRequests.filter((item) => item.status === activeFilter);
   }, [activeFilter, maintenanceRequests]);
+
+  const onStatusChange = async (requestId: string, status: MaintenanceStatus) => {
+    try {
+      await updateMaintenanceStatus(requestId, status);
+    } catch (error) {
+      Alert.alert('Status update failed', (error as Error).message);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -62,7 +77,7 @@ export const MaintenanceScreen = () => {
               key={item.id}
               item={item}
               onOpenDataverse={() => openExternalUrl(item.dataverseUrl)}
-              onStatusChange={(status) => updateMaintenanceStatus(item.id, status)}
+              onStatusChange={(status) => void onStatusChange(item.id, status)}
             />
           ))
         )}

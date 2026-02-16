@@ -32,6 +32,8 @@ export const mockConversations: Conversation[] = [
       bedrooms: 2,
       bathrooms: 2,
       rent: 3200,
+      dataverseUrl:
+        'https://org.crm.dynamics.com/main.aspx?etn=rs_unit&pagetype=entityrecord&id=unit-1203',
     },
     hasBot: true,
     botEscalated: true,
@@ -58,6 +60,8 @@ export const mockConversations: Conversation[] = [
       bedrooms: 1,
       bathrooms: 1,
       rent: 2550,
+      dataverseUrl:
+        'https://org.crm.dynamics.com/main.aspx?etn=rs_unit&pagetype=entityrecord&id=unit-709',
     },
     assignedPmId: 'pm-01',
     hasBot: true,
@@ -85,6 +89,8 @@ export const mockConversations: Conversation[] = [
       bedrooms: 1,
       bathrooms: 1,
       rent: 2400,
+      dataverseUrl:
+        'https://org.crm.dynamics.com/main.aspx?etn=rs_unit&pagetype=entityrecord&id=unit-404',
     },
     assignedPmId: 'pm-01',
     hasBot: true,

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
   KeyboardAvoidingView,
@@ -24,6 +24,7 @@ import { colors, radius, spacing, typography } from '../theme/theme';
 import { formatCurrency } from '../utils/format';
 import { openExternalUrl } from '../utils/linking';
 import { MaintenanceStatus } from '../types/domain';
+import { ChatRealtimeClient } from '../services/chatRealtime';
 
 type Props = NativeStackScreenProps<InboxStackParamList, 'ConversationDetail'>;
 
@@ -39,13 +40,18 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     closeConversation,
     updateMaintenanceStatus,
     addVisitNote,
+    connectConversationRealtime,
+    isRemoteMode,
   } = useAppStore();
+
+  const realtimeClientRef = useRef<ChatRealtimeClient | null>(null);
 
   const [draft, setDraft] = useState('');
   const [isNoteModalVisible, setIsNoteModalVisible] = useState(false);
   const [note, setNote] = useState('');
   const [selectedPhotoUri, setSelectedPhotoUri] = useState<string | undefined>();
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
+  const [realtimeError, setRealtimeError] = useState<string | null>(null);
 
   const conversation = useMemo(
     () => conversations.find((item) => item.id === conversationId),
@@ -71,8 +77,62 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           (item.propertyId === conversation?.property.id &&
             item.unitId === conversation?.unit.id),
       ),
-    [conversation?.property.id, conversation?.unit.id, conversationId, maintenanceRequests],
+    [
+      conversation?.property.id,
+      conversation?.unit.id,
+      conversationId,
+      maintenanceRequests,
+    ],
   );
+
+  useEffect(() => {
+    markConversationRead(conversationId);
+  }, [conversationId, conversationMessages.length, markConversationRead]);
+
+  useEffect(() => {
+    let active = true;
+
+    const connect = async () => {
+      if (!isRemoteMode) {
+        return;
+      }
+
+      setRealtimeError(null);
+
+      try {
+        const client = await connectConversationRealtime(
+          conversationId,
+          (message) => {
+            if (!active) {
+              return;
+            }
+            setRealtimeError(message);
+          },
+        );
+
+        if (!active) {
+          client?.close();
+          return;
+        }
+
+        realtimeClientRef.current = client;
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        setRealtimeError((error as Error).message);
+      }
+    };
+
+    void connect();
+
+    return () => {
+      active = false;
+      realtimeClientRef.current?.close();
+      realtimeClientRef.current = null;
+    };
+  }, [connectConversationRealtime, conversationId, isRemoteMode]);
 
   if (!conversation) {
     return (
@@ -82,18 +142,28 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     );
   }
 
-  const onAssign = () => {
-    assignConversation(conversation.id);
-    markConversationRead(conversation.id);
+  const isClosed = conversation.status === 'closed';
+
+  const onAssign = async () => {
+    try {
+      await assignConversation(conversation.id);
+      markConversationRead(conversation.id);
+    } catch (error) {
+      Alert.alert('Unable to assign', (error as Error).message);
+    }
   };
 
-  const onSend = () => {
+  const onSend = async () => {
     if (!draft.trim()) {
       return;
     }
 
-    sendMessage(conversation.id, draft);
-    setDraft('');
+    try {
+      await sendMessage(conversation.id, draft);
+      setDraft('');
+    } catch (error) {
+      Alert.alert('Unable to send', (error as Error).message);
+    }
   };
 
   const onCloseConversation = () => {
@@ -102,7 +172,15 @@ export const ConversationDetailScreen = ({ route }: Props) => {
       {
         text: 'Close',
         style: 'destructive',
-        onPress: () => closeConversation(conversation.id),
+        onPress: () => {
+          void (async () => {
+            try {
+              await closeConversation(conversation.id);
+            } catch (error) {
+              Alert.alert('Unable to close', (error as Error).message);
+            }
+          })();
+        },
       },
     ]);
   };
@@ -124,29 +202,37 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     }
   };
 
-  const saveVisitNote = () => {
+  const saveVisitNote = async () => {
     if (!note.trim()) {
       Alert.alert('Note required', 'Please add a site visit note before saving.');
       return;
     }
 
-    addVisitNote({
-      propertyId: conversation.property.id,
-      unitId: conversation.unit.id,
-      maintenanceRequestId: selectedMaintenanceId,
-      note,
-      photoUri: selectedPhotoUri,
-    });
+    try {
+      await addVisitNote({
+        propertyId: conversation.property.id,
+        unitId: conversation.unit.id,
+        maintenanceRequestId: selectedMaintenanceId,
+        note,
+        photoUri: selectedPhotoUri,
+      });
 
-    setNote('');
-    setSelectedPhotoUri(undefined);
-    setSelectedMaintenanceId(undefined);
-    setIsNoteModalVisible(false);
-    Alert.alert('Saved', 'Site visit note was added.');
+      setNote('');
+      setSelectedPhotoUri(undefined);
+      setSelectedMaintenanceId(undefined);
+      setIsNoteModalVisible(false);
+      Alert.alert('Saved', 'Site visit note was added.');
+    } catch (error) {
+      Alert.alert('Unable to save note', (error as Error).message);
+    }
   };
 
-  const updateStatus = (requestId: string, status: MaintenanceStatus) => {
-    updateMaintenanceStatus(requestId, status);
+  const onUpdateStatus = async (requestId: string, status: MaintenanceStatus) => {
+    try {
+      await updateMaintenanceStatus(requestId, status);
+    } catch (error) {
+      Alert.alert('Status update failed', (error as Error).message);
+    }
   };
 
   return (
@@ -167,8 +253,8 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
           <Text style={styles.propertyName}>{conversation.property.name}</Text>
           <Text style={styles.unitDetails}>
-            {conversation.unit.label} · {conversation.unit.bedrooms} bed · {conversation.unit.bathrooms} bath ·{' '}
-            {formatCurrency(conversation.unit.rent)}
+            {conversation.unit.label} · {conversation.unit.bedrooms} bed ·{' '}
+            {conversation.unit.bathrooms} bath · {formatCurrency(conversation.unit.rent)}
           </Text>
           <Text style={styles.address}>{conversation.property.address}</Text>
 
@@ -181,6 +267,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
               onPress={() => openExternalUrl(conversation.property.dataverseUrl)}
               variant="outline"
             />
+            <PrimaryButton
+              label="Open Unit in Dataverse"
+              onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
+              variant="outline"
+            />
             {conversation.dataverseCaseUrl && (
               <PrimaryButton
                 label="Open Related Case"
@@ -191,7 +282,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           </View>
         </View>
 
-        {conversation.botEscalated && conversation.status !== 'closed' && (
+        {conversation.botEscalated && !isClosed && (
           <View style={styles.handoffBanner}>
             <Ionicons name="sparkles" size={16} color={colors.warning} />
             <Text style={styles.handoffText}>
@@ -200,9 +291,16 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           </View>
         )}
 
+        {realtimeError && (
+          <View style={styles.realtimeWarning}>
+            <Ionicons name="warning-outline" size={16} color={colors.warning} />
+            <Text style={styles.realtimeWarningText}>{realtimeError}</Text>
+          </View>
+        )}
+
         <View style={styles.sectionHead}>
           <Text style={styles.sectionTitle}>Messages</Text>
-          {conversation.status !== 'closed' && (
+          {!isClosed && (
             <Pressable onPress={onCloseConversation}>
               <Text style={styles.closeText}>Close chat</Text>
             </Pressable>
@@ -230,39 +328,48 @@ export const ConversationDetailScreen = ({ route }: Props) => {
                 key={request.id}
                 compact
                 item={request}
+                readOnly={isClosed}
                 onOpenDataverse={() => openExternalUrl(request.dataverseUrl)}
-                onStatusChange={(status) => updateStatus(request.id, status)}
+                onStatusChange={(status) => onUpdateStatus(request.id, status)}
               />
             ))
           )}
         </View>
       </ScrollView>
 
-      <View style={styles.composerWrap}>
-        <View style={styles.topComposerRow}>
-          <Pressable
-            onPress={() => setIsNoteModalVisible(true)}
-            style={styles.noteButton}
-          >
-            <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
-            <Text style={styles.noteButtonLabel}>Add site note + photo</Text>
-          </Pressable>
-        </View>
+      {!isClosed ? (
+        <View style={styles.composerWrap}>
+          <View style={styles.topComposerRow}>
+            <Pressable
+              onPress={() => setIsNoteModalVisible(true)}
+              style={styles.noteButton}
+            >
+              <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
+              <Text style={styles.noteButtonLabel}>Add site note + photo</Text>
+            </Pressable>
+          </View>
 
-        <View style={styles.messageComposer}>
-          <TextInput
-            style={styles.input}
-            value={draft}
-            onChangeText={setDraft}
-            placeholder="Reply to visitor..."
-            placeholderTextColor="#8D9AA5"
-            multiline
-          />
-          <Pressable onPress={onSend} style={styles.sendButton}>
-            <Ionicons name="send" size={17} color="#FFFFFF" />
-          </Pressable>
+          <View style={styles.messageComposer}>
+            <TextInput
+              style={styles.input}
+              value={draft}
+              onChangeText={setDraft}
+              placeholder="Reply to visitor..."
+              placeholderTextColor="#8D9AA5"
+              multiline
+            />
+            <Pressable onPress={() => void onSend()} style={styles.sendButton}>
+              <Ionicons name="send" size={17} color="#FFFFFF" />
+            </Pressable>
+          </View>
         </View>
-      </View>
+      ) : (
+        <View style={styles.closedNoticeWrap}>
+          <Text style={styles.closedNoticeText}>
+            Conversation is closed. Reopen from back-office if new updates are needed.
+          </Text>
+        </View>
+      )}
 
       <Modal visible={isNoteModalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
@@ -312,7 +419,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
               multiline
             />
 
-            <Pressable style={styles.photoPicker} onPress={pickPhoto}>
+            <Pressable style={styles.photoPicker} onPress={() => void pickPhoto()}>
               <Ionicons name="image-outline" size={18} color={colors.textPrimary} />
               <Text style={styles.photoPickerText}>
                 {selectedPhotoUri ? 'Photo attached' : 'Attach photo'}
@@ -325,7 +432,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
                 onPress={() => setIsNoteModalVisible(false)}
                 variant="outline"
               />
-              <PrimaryButton label="Save note" onPress={saveVisitNote} />
+              <PrimaryButton label="Save note" onPress={() => void saveVisitNote()} />
             </View>
           </View>
         </View>
@@ -410,6 +517,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
     lineHeight: 18,
+  },
+  realtimeWarning: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    backgroundColor: '#FFF6EA',
+    borderWidth: 1,
+    borderColor: '#FFD9AD',
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  realtimeWarningText: {
+    color: '#7E4B12',
+    fontSize: typography.small,
+    fontWeight: '600',
+    flex: 1,
   },
   sectionHead: {
     flexDirection: 'row',
@@ -503,6 +626,20 @@ const styles = StyleSheet.create({
     backgroundColor: colors.accent,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  closedNoticeWrap: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 14,
+    borderTopWidth: 1,
+    borderTopColor: colors.border,
+    backgroundColor: colors.surface,
+  },
+  closedNoticeText: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    lineHeight: 20,
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,

@@ -1,4 +1,5 @@
 const API_BASE_URL = process.env.EXPO_PUBLIC_BFF_BASE_URL?.replace(/\/$/, '');
+let authToken: string | null = null;
 
 const jsonHeaders = {
   'Content-Type': 'application/json',
@@ -13,6 +14,7 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     ...init,
     headers: {
       ...jsonHeaders,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
       ...(init?.headers ?? {}),
     },
   });
@@ -41,4 +43,8 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify(body),
     }),
+};
+
+export const setApiAuthToken = (token: string | null) => {
+  authToken = token;
 };

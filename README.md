@@ -57,9 +57,13 @@ npm run typecheck
 Create `.env` (or set in EAS/local shell):
 
 ```bash
+EXPO_PUBLIC_USE_MOCK=true
 EXPO_PUBLIC_BFF_BASE_URL=https://your-bff.example.com
 EXPO_PUBLIC_CHAT_WS_URL=wss://your-chat-worker.example.com
 ```
+
+- `EXPO_PUBLIC_USE_MOCK=true` keeps local mock mode for development/demo.
+- Set `EXPO_PUBLIC_USE_MOCK=false` to use remote BFF + chat backend.
 
 ## Integration Notes (Production)
 
@@ -70,6 +74,7 @@ EXPO_PUBLIC_CHAT_WS_URL=wss://your-chat-worker.example.com
 2. **Live Chat**
 - Use Cloudflare Worker + Durable Objects websocket endpoint.
 - Enable websocket hibernation in DO implementation to control duration cost.
+- The app requests chat socket access from `POST /mobile/pm/conversations/:id/chat-access` and then opens websocket.
 
 3. **Dataverse Boundary**
 - Keep full chat transcripts in Cloudflare (D1).
@@ -78,6 +83,19 @@ EXPO_PUBLIC_CHAT_WS_URL=wss://your-chat-worker.example.com
 4. **Photos**
 - Upload image to R2 via signed URL from BFF/Worker.
 - Store only metadata + record linkage in Dataverse.
+
+## Remote API Contract Used by App
+
+When `EXPO_PUBLIC_USE_MOCK=false`, the app calls these BFF endpoints:
+
+- `POST /mobile/pm/auth/sign-in`
+- `GET /mobile/pm/bootstrap`
+- `POST /mobile/pm/conversations/:id/assign`
+- `POST /mobile/pm/conversations/:id/messages`
+- `POST /mobile/pm/conversations/:id/close`
+- `PATCH /mobile/pm/maintenance/:id`
+- `POST /mobile/pm/visit-notes`
+- `POST /mobile/pm/conversations/:id/chat-access`
 
 ## UX Decisions for PM Workflow
 

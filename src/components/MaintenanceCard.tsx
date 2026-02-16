@@ -10,6 +10,7 @@ interface MaintenanceCardProps {
   onOpenDataverse: () => void;
   onStatusChange: (status: MaintenanceStatus) => void;
   compact?: boolean;
+  readOnly?: boolean;
 }
 
 const options: MaintenanceStatus[] = ['new', 'in_progress', 'done'];
@@ -19,6 +20,7 @@ export const MaintenanceCard = ({
   onOpenDataverse,
   onStatusChange,
   compact = false,
+  readOnly = false,
 }: MaintenanceCardProps) => {
   return (
     <View style={[styles.card, compact && styles.compact]}>
@@ -38,8 +40,13 @@ export const MaintenanceCard = ({
           return (
             <Pressable
               key={option}
+              disabled={readOnly}
               onPress={() => onStatusChange(option)}
-              style={[styles.optionButton, selected && styles.optionSelected]}
+              style={[
+                styles.optionButton,
+                selected && styles.optionSelected,
+                readOnly && styles.optionDisabled,
+              ]}
             >
               <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
                 {option === 'in_progress' ? 'In Progress' : option === 'new' ? 'New' : 'Done'}
@@ -117,6 +124,9 @@ const styles = StyleSheet.create({
   },
   optionTextSelected: {
     color: colors.accent,
+  },
+  optionDisabled: {
+    opacity: 0.5,
   },
   deepLinkButton: {
     paddingVertical: 8,

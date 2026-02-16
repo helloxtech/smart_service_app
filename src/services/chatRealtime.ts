@@ -1,9 +1,10 @@
 export interface RealtimeMessagePayload {
+  id?: string;
   conversationId: string;
   senderType: 'visitor' | 'pm' | 'bot' | 'system';
   senderName: string;
   body: string;
-  createdAt: string;
+  createdAt?: string;
 }
 
 export interface ChatRealtimeClient {

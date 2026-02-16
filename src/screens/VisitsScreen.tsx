@@ -84,7 +84,7 @@ export const VisitsScreen = () => {
     }
   };
 
-  const saveNote = () => {
+  const saveNote = async () => {
     if (!selectedUnit) {
       Alert.alert('Select unit', 'Please select a property/unit first.');
       return;
@@ -95,18 +95,22 @@ export const VisitsScreen = () => {
       return;
     }
 
-    addVisitNote({
-      propertyId: selectedUnit.propertyId,
-      unitId: selectedUnit.unitId,
-      maintenanceRequestId: selectedMaintenanceId,
-      note,
-      photoUri,
-    });
+    try {
+      await addVisitNote({
+        propertyId: selectedUnit.propertyId,
+        unitId: selectedUnit.unitId,
+        maintenanceRequestId: selectedMaintenanceId,
+        note,
+        photoUri,
+      });
 
-    setNote('');
-    setPhotoUri(undefined);
-    setSelectedMaintenanceId(undefined);
-    Alert.alert('Saved', 'Site visit note saved successfully.');
+      setNote('');
+      setPhotoUri(undefined);
+      setSelectedMaintenanceId(undefined);
+      Alert.alert('Saved', 'Site visit note saved successfully.');
+    } catch (error) {
+      Alert.alert('Unable to save note', (error as Error).message);
+    }
   };
 
   return (
@@ -176,7 +180,7 @@ export const VisitsScreen = () => {
 
         {photoUri && <Image source={{ uri: photoUri }} style={styles.previewImage} />}
 
-        <PrimaryButton label="Save note" onPress={saveNote} />
+        <PrimaryButton label="Save note" onPress={() => void saveNote()} />
       </View>
 
       <View style={styles.card}>

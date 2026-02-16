@@ -23,6 +23,7 @@ export interface UnitInfo {
   bedrooms: number;
   bathrooms: number;
   rent: number;
+  dataverseUrl: string;
 }
 
 export interface Message {

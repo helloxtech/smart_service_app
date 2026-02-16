@@ -21,6 +21,14 @@ import {
   mockPmUser,
   mockVisitNotes,
 } from '../services/mockData';
+import { setApiAuthToken } from '../services/api';
+import { remoteApi } from '../services/remoteApi';
+import { runtimeConfig } from '../services/runtimeConfig';
+import {
+  ChatRealtimeClient,
+  RealtimeMessagePayload,
+  connectChatRealtime,
+} from '../services/chatRealtime';
 
 interface AddVisitNoteInput {
   propertyId: string;
@@ -36,14 +44,22 @@ interface AppStoreValue {
   messages: Message[];
   maintenanceRequests: MaintenanceRequest[];
   visitNotes: SiteVisitNote[];
+  isRemoteMode: boolean;
   signIn: (email: string, password: string) => Promise<void>;
   signOut: () => void;
   markConversationRead: (conversationId: string) => void;
-  assignConversation: (conversationId: string) => void;
-  sendMessage: (conversationId: string, text: string) => void;
-  closeConversation: (conversationId: string) => void;
-  updateMaintenanceStatus: (requestId: string, status: MaintenanceStatus) => void;
-  addVisitNote: (payload: AddVisitNoteInput) => void;
+  assignConversation: (conversationId: string) => Promise<void>;
+  sendMessage: (conversationId: string, text: string) => Promise<void>;
+  closeConversation: (conversationId: string) => Promise<void>;
+  updateMaintenanceStatus: (
+    requestId: string,
+    status: MaintenanceStatus,
+  ) => Promise<void>;
+  addVisitNote: (payload: AddVisitNoteInput) => Promise<void>;
+  connectConversationRealtime: (
+    conversationId: string,
+    onError?: (message: string) => void,
+  ) => Promise<ChatRealtimeClient | null>;
 }
 
 const AppStoreContext = createContext<AppStoreValue | undefined>(undefined);
@@ -55,32 +71,19 @@ const sortConversations = (items: Conversation[]): Conversation[] => {
   );
 };
 
+const initialConversations = sortConversations(mockConversations);
+
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
-  const [conversations, setConversations] = useState<Conversation[]>(
-    sortConversations(mockConversations),
-  );
+  const [conversations, setConversations] =
+    useState<Conversation[]>(initialConversations);
   const [messages, setMessages] = useState<Message[]>(mockMessages);
-  const [maintenanceRequests, setMaintenanceRequests] = useState<MaintenanceRequest[]>(
-    mockMaintenanceRequests,
-  );
+  const [maintenanceRequests, setMaintenanceRequests] = useState<
+    MaintenanceRequest[]
+  >(mockMaintenanceRequests);
   const [visitNotes, setVisitNotes] = useState<SiteVisitNote[]>(mockVisitNotes);
 
-  const signIn = useCallback(async (email: string, _password: string) => {
-    if (!email.toLowerCase().includes('@')) {
-      throw new Error('Please enter a valid work email.');
-    }
-
-    // Replace with Entra ID + BFF token exchange in production.
-    setCurrentUser({
-      ...mockPmUser,
-      email,
-    });
-  }, []);
-
-  const signOut = useCallback(() => {
-    setCurrentUser(null);
-  }, []);
+  const isRemoteMode = !runtimeConfig.useMockData;
 
   const markConversationRead = useCallback((conversationId: string) => {
     setConversations((prev) =>
@@ -95,10 +98,105 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     );
   }, []);
 
+  const applyRealtimeMessage = useCallback(
+    (payload: RealtimeMessagePayload) => {
+      const createdAt = payload.createdAt ?? new Date().toISOString();
+      const messageId =
+        payload.id ??
+        `rt-${payload.conversationId}-${createdAt}-${payload.senderType}-${payload.senderName}`;
+
+      setMessages((prev) => {
+        if (prev.some((item) => item.id === messageId)) {
+          return prev;
+        }
+
+        return [
+          ...prev,
+          {
+            id: messageId,
+            conversationId: payload.conversationId,
+            senderType: payload.senderType,
+            senderName: payload.senderName,
+            body: payload.body,
+            createdAt,
+          },
+        ];
+      });
+
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((item) => {
+            if (item.id !== payload.conversationId) {
+              return item;
+            }
+
+            const fromVisitorOrBot =
+              payload.senderType === 'visitor' || payload.senderType === 'bot';
+            const fromAnotherPm =
+              payload.senderType === 'pm' &&
+              payload.senderName !== currentUser?.name;
+
+            return {
+              ...item,
+              lastMessageAt: createdAt,
+              unreadCount:
+                fromVisitorOrBot || fromAnotherPm
+                  ? item.unreadCount + 1
+                  : item.unreadCount,
+            };
+          }),
+        ),
+      );
+    },
+    [currentUser?.name],
+  );
+
+  const signIn = useCallback(async (email: string, password: string) => {
+    if (!email.toLowerCase().includes('@')) {
+      throw new Error('Please enter a valid work email.');
+    }
+
+    if (runtimeConfig.useMockData) {
+      setApiAuthToken(null);
+      setCurrentUser({
+        ...mockPmUser,
+        email,
+      });
+      setConversations(initialConversations);
+      setMessages(mockMessages);
+      setMaintenanceRequests(mockMaintenanceRequests);
+      setVisitNotes(mockVisitNotes);
+      return;
+    }
+
+    const session = await remoteApi.signIn(email, password);
+    setApiAuthToken(session.accessToken);
+    setCurrentUser(session.user);
+
+    const bootstrap = await remoteApi.getBootstrap();
+    setConversations(sortConversations(bootstrap.conversations));
+    setMessages(bootstrap.messages);
+    setMaintenanceRequests(bootstrap.maintenanceRequests);
+    setVisitNotes(bootstrap.visitNotes);
+  }, []);
+
+  const signOut = useCallback(() => {
+    setApiAuthToken(null);
+    setCurrentUser(null);
+    setConversations(initialConversations);
+    setMessages(mockMessages);
+    setMaintenanceRequests(mockMaintenanceRequests);
+    setVisitNotes(mockVisitNotes);
+  }, []);
+
   const assignConversation = useCallback(
-    (conversationId: string) => {
+    async (conversationId: string) => {
       if (!currentUser) {
-        return;
+        throw new Error('Please sign in before assigning conversations.');
+      }
+
+      if (!runtimeConfig.useMockData) {
+        await remoteApi.assignConversation(conversationId);
       }
 
       const now = new Date().toISOString();
@@ -135,17 +233,28 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   );
 
   const sendMessage = useCallback(
-    (conversationId: string, text: string) => {
+    async (conversationId: string, text: string) => {
       if (!currentUser || !text.trim()) {
         return;
       }
 
-      const now = new Date().toISOString();
+      const conversation = conversations.find((item) => item.id === conversationId);
+      if (conversation?.status === 'closed') {
+        throw new Error('Cannot send a message to a closed conversation.');
+      }
+
       const body = text.trim();
+      let message: Message | null = null;
+
+      if (!runtimeConfig.useMockData) {
+        message = await remoteApi.sendMessage(conversationId, body);
+      }
+
+      const now = message?.createdAt ?? new Date().toISOString();
 
       setMessages((prev) => [
         ...prev,
-        {
+        message ?? {
           id: `msg-${Date.now()}`,
           conversationId,
           senderType: 'pm',
@@ -171,10 +280,14 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         ),
       );
     },
-    [currentUser],
+    [conversations, currentUser],
   );
 
-  const closeConversation = useCallback((conversationId: string) => {
+  const closeConversation = useCallback(async (conversationId: string) => {
+    if (!runtimeConfig.useMockData) {
+      await remoteApi.closeConversation(conversationId);
+    }
+
     const now = new Date().toISOString();
 
     setConversations((prev) =>
@@ -184,6 +297,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
             ? {
                 ...item,
                 status: 'closed',
+                unreadCount: 0,
                 lastMessageAt: now,
               }
             : item,
@@ -205,8 +319,18 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   }, []);
 
   const updateMaintenanceStatus = useCallback(
-    (requestId: string, status: MaintenanceStatus) => {
+    async (requestId: string, status: MaintenanceStatus) => {
       const now = new Date().toISOString();
+
+      if (!runtimeConfig.useMockData) {
+        const updated = await remoteApi.updateMaintenanceStatus(requestId, status);
+
+        setMaintenanceRequests((prev) =>
+          prev.map((item) => (item.id === requestId ? updated : item)),
+        );
+        return;
+      }
+
       setMaintenanceRequests((prev) =>
         prev.map((item) =>
           item.id === requestId
@@ -222,8 +346,33 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     [],
   );
 
-  const addVisitNote = useCallback((payload: AddVisitNoteInput) => {
+  const addVisitNote = useCallback(async (payload: AddVisitNoteInput) => {
+    if (!payload.note.trim()) {
+      throw new Error('Please add note details before saving.');
+    }
+
     const now = new Date().toISOString();
+
+    if (!runtimeConfig.useMockData) {
+      const saved = await remoteApi.addVisitNote(payload);
+      setVisitNotes((prev) => [saved, ...prev]);
+
+      if (saved.maintenanceRequestId) {
+        setMaintenanceRequests((prev) =>
+          prev.map((item) =>
+            item.id === saved.maintenanceRequestId
+              ? {
+                  ...item,
+                  updatedAt: saved.createdAt,
+                }
+              : item,
+          ),
+        );
+      }
+
+      return;
+    }
+
     const note: SiteVisitNote = {
       id: `visit-${Date.now()}`,
       propertyId: payload.propertyId,
@@ -250,6 +399,32 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     }
   }, []);
 
+  const connectConversationRealtime = useCallback(
+    async (conversationId: string, onError?: (message: string) => void) => {
+      if (runtimeConfig.useMockData) {
+        return null;
+      }
+
+      const access = await remoteApi.getChatAccess(conversationId);
+      const wsUrl = access.wsUrl ?? runtimeConfig.defaultChatWsUrl;
+
+      if (!wsUrl) {
+        throw new Error(
+          'Missing websocket URL. Configure EXPO_PUBLIC_CHAT_WS_URL or provide wsUrl from chat-access endpoint.',
+        );
+      }
+
+      return connectChatRealtime({
+        wsUrl,
+        token: access.token,
+        conversationId,
+        onMessage: applyRealtimeMessage,
+        onError,
+      });
+    },
+    [applyRealtimeMessage],
+  );
+
   const value = useMemo(
     () => ({
       currentUser,
@@ -257,6 +432,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       messages,
       maintenanceRequests,
       visitNotes,
+      isRemoteMode,
       signIn,
       signOut,
       markConversationRead,
@@ -265,13 +441,16 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       closeConversation,
       updateMaintenanceStatus,
       addVisitNote,
+      connectConversationRealtime,
     }),
     [
       addVisitNote,
       assignConversation,
       closeConversation,
+      connectConversationRealtime,
       conversations,
       currentUser,
+      isRemoteMode,
       maintenanceRequests,
       markConversationRead,
       messages,
