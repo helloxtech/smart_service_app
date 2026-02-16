@@ -36,6 +36,7 @@ interface VisitNoteInput {
   maintenanceRequestId?: string;
   note: string;
   photoUri?: string;
+  photoUris?: string[];
 }
 
 interface ConversationMessageInput {
@@ -46,6 +47,7 @@ interface ConversationMessageInput {
 interface MaintenanceUpdateInput {
   note: string;
   photoUri?: string;
+  photoUris?: string[];
   source?: 'maintenance' | 'chat';
 }
 

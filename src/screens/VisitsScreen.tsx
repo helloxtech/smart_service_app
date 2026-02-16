@@ -26,6 +26,13 @@ interface UnitOption {
   label: string;
 }
 
+const getNotePhotoUris = (photoUris?: string[], fallbackPhotoUri?: string): string[] => {
+  const values = [...(photoUris ?? []), fallbackPhotoUri ?? '']
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values));
+};
+
 export const VisitsScreen = () => {
   const { conversations, visitNotes, maintenanceRequests, addVisitNote } = useAppStore();
   const insets = useSafeAreaInsets();
@@ -52,9 +59,10 @@ export const VisitsScreen = () => {
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
   const [unitSearch, setUnitSearch] = useState('');
   const [note, setNote] = useState('');
-  const [photoUri, setPhotoUri] = useState<string | undefined>();
+  const [photoUris, setPhotoUris] = useState<string[]>([]);
   const [selectedRecentNoteId, setSelectedRecentNoteId] = useState<string | undefined>();
   const [recentUnitKeys, setRecentUnitKeys] = useState<string[]>([]);
+  const [savedMaintenanceRequestId, setSavedMaintenanceRequestId] = useState<string | undefined>();
 
   const selectedUnit = unitOptions.find(
     (option) => `${option.propertyId}-${option.unitId}` === selectedUnitKey,
@@ -203,11 +211,18 @@ export const VisitsScreen = () => {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: 8,
       quality: 0.8,
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setPhotoUri(result.assets[0].uri);
+      setPhotoUris((prev) => {
+        const next = [...prev, ...result.assets.map((asset) => asset.uri)]
+          .map((item) => item.trim())
+          .filter(Boolean);
+        return Array.from(new Set(next)).slice(0, 8);
+      });
     }
   };
 
@@ -225,7 +240,12 @@ export const VisitsScreen = () => {
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        setPhotoUri(result.assets[0].uri);
+        setPhotoUris((prev) => {
+          const next = [...prev, result.assets[0].uri]
+            .map((item) => item.trim())
+            .filter(Boolean);
+          return Array.from(new Set(next)).slice(0, 8);
+        });
       }
     } catch {
       Alert.alert(
@@ -236,9 +256,12 @@ export const VisitsScreen = () => {
   };
 
   const choosePhoto = () => {
-    Alert.alert('Attach photo', 'Choose photo source', [
+    Alert.alert('Attach photos', 'Choose photo source', [
       { text: 'Take photo', onPress: () => void capturePhoto() },
       { text: 'Photo library', onPress: () => void pickPhotoFromLibrary() },
+      ...(photoUris.length > 0
+        ? [{ text: 'Clear all photos', style: 'destructive' as const, onPress: () => setPhotoUris([]) }]
+        : []),
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
@@ -264,19 +287,23 @@ export const VisitsScreen = () => {
     }
 
     try {
-      await addVisitNote({
+      const saved = await addVisitNote({
         propertyId: selectedUnit.propertyId,
         unitId: selectedUnit.unitId,
         maintenanceRequestId: selectedMaintenanceId,
         note,
-        photoUri,
+        photoUris,
       });
 
       setNote('');
-      setPhotoUri(undefined);
+      setPhotoUris([]);
       setSelectedMaintenanceId(undefined);
       rememberRecentUnit(`${selectedUnit.propertyId}-${selectedUnit.unitId}`);
-      Alert.alert('Saved', 'Site visit note saved successfully.');
+      if (saved.maintenanceRequestId) {
+        setSavedMaintenanceRequestId(saved.maintenanceRequestId);
+      } else {
+        Alert.alert('Saved', 'Site visit note saved successfully.');
+      }
     } catch (error) {
       Alert.alert('Unable to save note', (error as Error).message);
     }
@@ -363,14 +390,13 @@ export const VisitsScreen = () => {
             <View style={styles.pillWrap}>
               {recentUnitOptions.map((option) => {
                 const key = `${option.propertyId}-${option.unitId}`;
-                const selected = selectedUnitKey === key;
                 return (
                   <Pressable
                     key={key}
                     onPress={() => selectUnit(key)}
-                    style={[styles.pill, styles.recentUnitPill, selected && styles.pillSelected]}
+                    style={[styles.pill, styles.recentUnitPill]}
                   >
-                    <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                    <Text style={styles.pillText}>
                       {option.label}
                     </Text>
                   </Pressable>
@@ -461,11 +487,27 @@ export const VisitsScreen = () => {
         <Pressable style={styles.photoButton} onPress={choosePhoto}>
           <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
           <Text style={styles.photoButtonLabel}>
-            {photoUri ? 'Replace photo' : 'Attach photo'}
+            {photoUris.length > 0 ? `Add more photos (${photoUris.length})` : 'Attach photos'}
           </Text>
         </Pressable>
 
-        {photoUri && <Image source={{ uri: photoUri }} style={styles.previewImage} />}
+        {photoUris.length > 0 && (
+          <View style={styles.previewGrid}>
+            {photoUris.map((uri) => (
+              <View key={uri} style={styles.previewTileWrap}>
+                <Image source={{ uri }} style={styles.previewTile} />
+                <Pressable
+                  style={styles.previewRemove}
+                  onPress={() =>
+                    setPhotoUris((prev) => prev.filter((item) => item !== uri))
+                  }
+                >
+                  <Ionicons name="close" size={12} color="#FFFFFF" />
+                </Pressable>
+              </View>
+            ))}
+          </View>
+        )}
 
         <PrimaryButton label="Save note" onPress={() => void saveNote()} />
       </View>
@@ -495,8 +537,12 @@ export const VisitsScreen = () => {
                   Related request: {maintenanceTitleById.get(item.maintenanceRequestId) ?? item.maintenanceRequestId}
                 </Text>
               )}
-              {item.photoUri && (
-                <Image source={{ uri: item.photoUri }} style={styles.notePhotoThumb} />
+              {getNotePhotoUris(item.photoUris, item.photoUri).length > 0 && (
+                <View style={styles.notePhotoRow}>
+                  {getNotePhotoUris(item.photoUris, item.photoUri).map((uri) => (
+                    <Image key={uri} source={{ uri }} style={styles.notePhotoThumb} />
+                  ))}
+                </View>
               )}
               <Text style={styles.openNoteHint}>Tap to open</Text>
             </Pressable>
@@ -525,8 +571,18 @@ export const VisitsScreen = () => {
                   </Text>
                 )}
                 <Text style={styles.modalBody}>{selectedRecentNote.note}</Text>
-                {selectedRecentNote.photoUri && (
-                  <Image source={{ uri: selectedRecentNote.photoUri }} style={styles.modalImage} />
+                {getNotePhotoUris(
+                  selectedRecentNote.photoUris,
+                  selectedRecentNote.photoUri,
+                ).length > 0 && (
+                  <View style={styles.modalImageWrap}>
+                    {getNotePhotoUris(
+                      selectedRecentNote.photoUris,
+                      selectedRecentNote.photoUri,
+                    ).map((uri) => (
+                      <Image key={uri} source={{ uri }} style={styles.modalImage} />
+                    ))}
+                  </View>
                 )}
 
                 {selectedRecentNote.maintenanceRequestId && (
@@ -545,6 +601,38 @@ export const VisitsScreen = () => {
                 />
               </>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={Boolean(savedMaintenanceRequestId)} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Site note saved</Text>
+              <Pressable
+                onPress={() => {
+                  if (savedMaintenanceRequestId) {
+                    openMaintenanceDetail(savedMaintenanceRequestId);
+                  }
+                  setSavedMaintenanceRequestId(undefined);
+                }}
+              >
+                <Ionicons name="close" size={20} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+            <Text style={styles.modalMeta}>
+              A maintenance request has been linked. Continue in request details.
+            </Text>
+            <PrimaryButton
+              label="Open maintenance request"
+              onPress={() => {
+                if (savedMaintenanceRequestId) {
+                  openMaintenanceDetail(savedMaintenanceRequestId);
+                }
+                setSavedMaintenanceRequestId(undefined);
+              }}
+            />
           </View>
         </View>
       </Modal>
@@ -760,10 +848,32 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: typography.small,
   },
-  previewImage: {
-    width: '100%',
-    height: 180,
-    borderRadius: radius.md,
+  previewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  previewTileWrap: {
+    position: 'relative',
+  },
+  previewTile: {
+    width: 92,
+    height: 92,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: '#E8EEF1',
+  },
+  previewRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(27,42,56,0.86)',
   },
   noteCard: {
     borderWidth: 1,
@@ -792,6 +902,11 @@ const styles = StyleSheet.create({
     width: 86,
     height: 86,
     borderRadius: radius.sm,
+  },
+  notePhotoRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   openNoteHint: {
     color: '#2457A5',
@@ -832,9 +947,14 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     lineHeight: 20,
   },
+  modalImageWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
   modalImage: {
-    width: '100%',
-    height: 220,
+    width: 132,
+    height: 132,
     borderRadius: radius.md,
   },
 });

@@ -36,12 +36,14 @@ interface AddVisitNoteInput {
   maintenanceRequestId?: string;
   note: string;
   photoUri?: string;
+  photoUris?: string[];
 }
 
 interface AddMaintenanceUpdateInput {
   maintenanceRequestId: string;
   note?: string;
   photoUri?: string;
+  photoUris?: string[];
   source?: 'maintenance' | 'chat';
 }
 
@@ -77,7 +79,7 @@ interface AppStoreValue {
     requestId: string,
     status: MaintenanceStatus,
   ) => Promise<void>;
-  addVisitNote: (payload: AddVisitNoteInput) => Promise<void>;
+  addVisitNote: (payload: AddVisitNoteInput) => Promise<SiteVisitNote>;
   addMaintenanceUpdate: (payload: AddMaintenanceUpdateInput) => Promise<void>;
   connectConversationRealtime: (
     conversationId: string,
@@ -302,6 +304,22 @@ const buildMaintenanceTitleFromNote = (note: string): string => {
 
 const buildMaintenanceSummaryFromNote = (note: string): string =>
   summarizeMaintenanceText(note, 140) || 'Follow-up required from site visit.';
+
+const normalizePhotoUris = (
+  photoUris?: string[],
+  fallbackPhotoUri?: string,
+): string[] => {
+  const values = [...(photoUris ?? []), fallbackPhotoUri ?? '']
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values)).slice(0, 8);
+};
+
+const getPrimaryPhotoUri = (photoUris: string[]): string | undefined =>
+  photoUris.length > 0 ? photoUris[0] : undefined;
+
+const buildMockWorkOrderId = (): string =>
+  `work-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
 
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
@@ -578,7 +596,8 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         throw new Error('Maintenance request not found.');
       }
 
-      const hasPhoto = Boolean(payload.photoUri);
+      const normalizedPhotoUris = normalizePhotoUris(payload.photoUris, payload.photoUri);
+      const hasPhoto = normalizedPhotoUris.length > 0;
       const noteText = payload.note?.trim() ?? '';
       if (!noteText && !hasPhoto) {
         throw new Error('Add a note or photo before saving.');
@@ -595,12 +614,15 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
           payload.maintenanceRequestId,
           {
             note: resolvedNote,
-            photoUri: payload.photoUri,
+            photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
+            photoUris: normalizedPhotoUris,
             source,
           },
         );
         applyMaintenanceNoteState({
           ...saved,
+          photoUris: normalizePhotoUris(saved.photoUris, saved.photoUri),
+          photoUri: getPrimaryPhotoUri(normalizePhotoUris(saved.photoUris, saved.photoUri)),
           source: saved.source ?? source,
           authorName: saved.authorName ?? currentUser.name,
         });
@@ -613,7 +635,8 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         unitId: request.unitId,
         maintenanceRequestId: request.id,
         note: resolvedNote,
-        photoUri: payload.photoUri,
+        photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
+        photoUris: normalizedPhotoUris,
         source,
         authorName: currentUser.name,
         createdAt: now,
@@ -789,6 +812,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     }
 
     const now = new Date().toISOString();
+    const normalizedPhotoUris = normalizePhotoUris(payload.photoUris, payload.photoUri);
     const ensureMaintenanceRequestInState = (requestId?: string): string => {
       const resolvedId =
         requestId?.trim() || `mnt-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
@@ -797,15 +821,22 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
           return prev;
         }
 
+        const workOrderId = buildMockWorkOrderId();
+        const linkedConversation = conversations.find(
+          (item) =>
+            item.property.id === payload.propertyId
+            && item.unit.id === payload.unitId,
+        );
         const created: MaintenanceRequest = {
           id: resolvedId,
+          conversationId: linkedConversation?.id,
           propertyId: payload.propertyId,
           unitId: payload.unitId,
           title: buildMaintenanceTitleFromNote(payload.note),
           summary: buildMaintenanceSummaryFromNote(payload.note),
           status: 'new',
           priority: 'medium',
-          dataverseUrl: `${DEFAULT_WORKORDER_URL_PREFIX}${resolvedId}`,
+          dataverseUrl: `${DEFAULT_WORKORDER_URL_PREFIX}${workOrderId}`,
           updatedAt: now,
         };
         return [created, ...prev];
@@ -820,14 +851,18 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
       ensureMaintenanceRequestInState(resolvedMaintenanceRequestId);
 
-      applyMaintenanceNoteState({
+      const normalizedSavedPhotoUris = normalizePhotoUris(saved.photoUris, saved.photoUri);
+      const normalizedSaved: SiteVisitNote = {
         ...saved,
         maintenanceRequestId: resolvedMaintenanceRequestId,
+        photoUris: normalizedSavedPhotoUris,
+        photoUri: getPrimaryPhotoUri(normalizedSavedPhotoUris),
         source: saved.source ?? 'visit',
         authorName: saved.authorName ?? actingUser.name,
-      });
+      };
+      applyMaintenanceNoteState(normalizedSaved);
 
-      return;
+      return normalizedSaved;
     }
 
     const resolvedMaintenanceRequestId = payload.maintenanceRequestId
@@ -840,14 +875,16 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       unitId: payload.unitId,
       maintenanceRequestId: resolvedMaintenanceRequestId,
       note: payload.note,
-      photoUri: payload.photoUri,
+      photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
+      photoUris: normalizedPhotoUris,
       source: 'visit',
       authorName: actingUser.name,
       createdAt: now,
     };
 
     applyMaintenanceNoteState(note);
-  }, [applyMaintenanceNoteState, currentUser]);
+    return note;
+  }, [applyMaintenanceNoteState, conversations, currentUser]);
 
   const connectConversationRealtime = useCallback(
     async (conversationId: string, onError?: (message: string) => void) => {

@@ -30,6 +30,13 @@ const getTimelineSourceLabel = (item: SiteVisitNote): string => {
   return 'Maintenance update';
 };
 
+const getNotePhotoUris = (photoUris?: string[], fallbackPhotoUri?: string): string[] => {
+  const values = [...(photoUris ?? []), fallbackPhotoUri ?? '']
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return Array.from(new Set(values));
+};
+
 export const MaintenanceDetailScreen = ({ route }: Props) => {
   const { requestId } = route.params;
   const {
@@ -43,7 +50,7 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
   const insets = useSafeAreaInsets();
 
   const [updateNote, setUpdateNote] = useState('');
-  const [updatePhotoUri, setUpdatePhotoUri] = useState<string | undefined>();
+  const [updatePhotoUris, setUpdatePhotoUris] = useState<string[]>([]);
   const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
 
   const canEditStatus = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
@@ -108,11 +115,18 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
+      allowsMultipleSelection: true,
+      selectionLimit: 8,
       quality: 0.8,
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setUpdatePhotoUri(result.assets[0].uri);
+      setUpdatePhotoUris((prev) => {
+        const next = [...prev, ...result.assets.map((asset) => asset.uri)]
+          .map((item) => item.trim())
+          .filter(Boolean);
+        return Array.from(new Set(next)).slice(0, 8);
+      });
     }
   };
 
@@ -130,7 +144,12 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        setUpdatePhotoUri(result.assets[0].uri);
+        setUpdatePhotoUris((prev) => {
+          const next = [...prev, result.assets[0].uri]
+            .map((item) => item.trim())
+            .filter(Boolean);
+          return Array.from(new Set(next)).slice(0, 8);
+        });
       }
     } catch {
       Alert.alert(
@@ -141,9 +160,12 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
   };
 
   const choosePhoto = () => {
-    Alert.alert('Attach photo', 'Choose photo source', [
+    Alert.alert('Attach photos', 'Choose photo source', [
       { text: 'Take photo', onPress: () => void capturePhoto() },
       { text: 'Photo library', onPress: () => void pickPhotoFromLibrary() },
+      ...(updatePhotoUris.length > 0
+        ? [{ text: 'Clear all photos', style: 'destructive' as const, onPress: () => setUpdatePhotoUris([]) }]
+        : []),
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
@@ -157,11 +179,11 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
       await addMaintenanceUpdate({
         maintenanceRequestId: request.id,
         note: updateNote,
-        photoUri: updatePhotoUri,
+        photoUris: updatePhotoUris,
         source: 'maintenance',
       });
       setUpdateNote('');
-      setUpdatePhotoUri(undefined);
+      setUpdatePhotoUris([]);
       Alert.alert('Saved', 'Maintenance update added.');
     } catch (error) {
       Alert.alert('Unable to save update', (error as Error).message);
@@ -208,8 +230,12 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
               {formatRelativeTime(latestUpdate.createdAt)}
             </Text>
             <Text style={styles.updateText}>{latestUpdate.note}</Text>
-            {latestUpdate.photoUri && (
-              <Image source={{ uri: latestUpdate.photoUri }} style={styles.updateImage} />
+            {getNotePhotoUris(latestUpdate.photoUris, latestUpdate.photoUri).length > 0 && (
+              <View style={styles.updateImageRow}>
+                {getNotePhotoUris(latestUpdate.photoUris, latestUpdate.photoUri).map((uri) => (
+                  <Image key={uri} source={{ uri }} style={styles.updateImage} />
+                ))}
+              </View>
             )}
           </View>
         ) : (
@@ -238,8 +264,12 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
                   {item.authorName ? ` · ${item.authorName}` : ''} · {formatRelativeTime(item.createdAt)}
                 </Text>
                 <Text style={styles.updateText}>{item.note}</Text>
-                {item.photoUri && (
-                  <Image source={{ uri: item.photoUri }} style={styles.updateImage} />
+                {getNotePhotoUris(item.photoUris, item.photoUri).length > 0 && (
+                  <View style={styles.updateImageRow}>
+                    {getNotePhotoUris(item.photoUris, item.photoUri).map((uri) => (
+                      <Image key={uri} source={{ uri }} style={styles.updateImage} />
+                    ))}
+                  </View>
                 )}
               </View>
             ))}
@@ -259,7 +289,7 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
 
       {canAddUpdates && (
         <View style={styles.card}>
-          <Text style={styles.cardTitle}>Add update + photo</Text>
+          <Text style={styles.cardTitle}>Add update + photos</Text>
           <Text style={styles.metaLine}>
             Share progress details and extra photos for this maintenance request.
           </Text>
@@ -273,13 +303,27 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
             multiline
           />
 
-          {updatePhotoUri ? (
-            <View style={styles.photoPreviewRow}>
-              <Image source={{ uri: updatePhotoUri }} style={styles.photoPreview} />
+          {updatePhotoUris.length > 0 ? (
+            <View style={styles.photoPreviewGrid}>
+              {updatePhotoUris.map((uri) => (
+                <View key={uri} style={styles.photoPreviewWrap}>
+                  <Image source={{ uri }} style={styles.photoPreview} />
+                  <Pressable
+                    style={styles.photoThumbRemove}
+                    onPress={() =>
+                      setUpdatePhotoUris((prev) => prev.filter((item) => item !== uri))
+                    }
+                  >
+                    <Ionicons name="close" size={12} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              ))}
               <View style={styles.photoPreviewMeta}>
-                <Text style={styles.photoPreviewText}>Photo attached</Text>
-                <Pressable onPress={() => setUpdatePhotoUri(undefined)}>
-                  <Text style={styles.photoPreviewRemove}>Remove</Text>
+                <Text style={styles.photoPreviewText}>
+                  {updatePhotoUris.length} photo{updatePhotoUris.length > 1 ? 's' : ''} attached
+                </Text>
+                <Pressable onPress={() => setUpdatePhotoUris([])}>
+                  <Text style={styles.photoPreviewRemove}>Clear all</Text>
                 </Pressable>
               </View>
             </View>
@@ -288,7 +332,9 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
           <Pressable style={styles.attachButton} onPress={choosePhoto}>
             <Ionicons name="image-outline" size={18} color={colors.textPrimary} />
             <Text style={styles.attachButtonText}>
-              {updatePhotoUri ? 'Replace photo' : 'Attach photo'}
+              {updatePhotoUris.length > 0
+                ? `Add more photos (${updatePhotoUris.length})`
+                : 'Attach photos'}
             </Text>
           </Pressable>
 
@@ -397,15 +443,13 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: typography.small,
   },
-  photoPreviewRow: {
+  photoPreviewGrid: {
     flexDirection: 'row',
-    alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 10,
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
-    borderRadius: radius.md,
-    backgroundColor: '#FAFCFD',
-    padding: 8,
+  },
+  photoPreviewWrap: {
+    position: 'relative',
   },
   photoPreview: {
     width: 64,
@@ -416,8 +460,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8EEF1',
   },
   photoPreviewMeta: {
-    flex: 1,
+    minWidth: 120,
     gap: 4,
+    alignSelf: 'center',
   },
   photoPreviewText: {
     color: colors.textPrimary,
@@ -428,6 +473,17 @@ const styles = StyleSheet.create({
     color: colors.danger,
     fontWeight: '700',
     fontSize: 12,
+  },
+  photoThumbRemove: {
+    position: 'absolute',
+    top: -6,
+    right: -6,
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(27,42,56,0.86)',
   },
   updatesList: {
     gap: spacing.sm,
@@ -451,12 +507,17 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   updateImage: {
-    width: '100%',
-    height: 200,
+    width: 124,
+    height: 124,
     borderRadius: radius.sm,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: '#E8EEF1',
+  },
+  updateImageRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   missingWrap: {
     flex: 1,

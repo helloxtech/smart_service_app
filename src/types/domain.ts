@@ -62,6 +62,7 @@ export interface SiteVisitNote {
   maintenanceRequestId?: string;
   note: string;
   photoUri?: string;
+  photoUris?: string[];
   source?: 'visit' | 'maintenance' | 'chat';
   authorName?: string;
   createdAt: string;
