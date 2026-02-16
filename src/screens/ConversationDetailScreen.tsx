@@ -146,6 +146,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   }
 
   const isClosed = conversation.status === 'closed';
+  const canAcceptHandoff =
+    canManageConversation
+    && !conversation.assignedPmId
+    && (conversation.status === 'new' || conversation.status === 'waiting');
+  const handoffAlreadyAccepted = conversation.botEscalated && Boolean(conversation.assignedPmId);
 
   const onAssign = async () => {
     if (!canManageConversation) {
@@ -315,7 +320,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
           {canManageConversation && (
             <View style={styles.contextActions}>
-              {conversation.status === 'new' && (
+              {canAcceptHandoff && (
                 <PrimaryButton label="Accept Handoff" onPress={onAssign} />
               )}
               <PrimaryButton
@@ -344,6 +349,14 @@ export const ConversationDetailScreen = ({ route }: Props) => {
             <Ionicons name="sparkles" size={16} color={colors.warning} />
             <Text style={styles.handoffText}>
               Bot escalated this chat to a manager based on confidence rules.
+            </Text>
+          </View>
+        )}
+        {handoffAlreadyAccepted && (
+          <View style={styles.acceptedBanner}>
+            <Ionicons name="checkmark-circle-outline" size={16} color={colors.accent} />
+            <Text style={styles.acceptedText}>
+              Handoff already accepted. Current status is {conversation.status}.
             </Text>
           </View>
         )}
@@ -583,6 +596,22 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     flex: 1,
     lineHeight: 18,
+  },
+  acceptedBanner: {
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    backgroundColor: colors.accentMuted,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+  },
+  acceptedText: {
+    color: colors.accent,
+    fontSize: typography.small,
+    fontWeight: '700',
+    flex: 1,
+    lineHeight: 18,
+    textTransform: 'capitalize',
   },
   realtimeWarning: {
     flexDirection: 'row',

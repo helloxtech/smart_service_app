@@ -11,6 +11,10 @@ interface ConversationCardProps {
 }
 
 export const ConversationCard = ({ conversation, onPress }: ConversationCardProps) => {
+  const escalationLabel = conversation.assignedPmId
+    ? 'Bot handoff accepted'
+    : 'Bot requested manager takeover';
+
   return (
     <Pressable style={styles.card} onPress={onPress}>
       <View style={styles.topRow}>
@@ -33,9 +37,7 @@ export const ConversationCard = ({ conversation, onPress }: ConversationCardProp
         )}
       </View>
 
-      {conversation.botEscalated && (
-        <Text style={styles.escalated}>Bot requested manager takeover</Text>
-      )}
+      {conversation.botEscalated && <Text style={styles.escalated}>{escalationLabel}</Text>}
     </Pressable>
   );
 };
