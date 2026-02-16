@@ -262,6 +262,9 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     }
   };
 
+  const workOrderSectionTitle =
+    linkedMaintenance.length === 1 ? 'Work order' : 'Work orders';
+
   return (
     <KeyboardAvoidingView
       style={styles.container}
@@ -351,13 +354,13 @@ export const ConversationDetailScreen = ({ route }: Props) => {
         </View>
 
         <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>Maintenance summary</Text>
+          <Text style={styles.sectionTitle}>{workOrderSectionTitle}</Text>
         </View>
 
         <View style={styles.maintenanceWrap}>
           {linkedMaintenance.length === 0 ? (
             <Text style={styles.emptyMaintenance}>
-              No maintenance request linked yet.
+              No work order linked yet.
             </Text>
           ) : (
             linkedMaintenance.map((request) => (
