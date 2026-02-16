@@ -17,15 +17,21 @@ const styleByStatus: Record<string, { bg: string; fg: string }> = {
   done: { bg: '#E3F6EE', fg: '#177A52' },
 };
 
+const labelByStatus: Record<string, string> = {
+  assigned: 'In Progress',
+  waiting: 'Needs Reply',
+};
+
 export const StatusBadge = ({ status }: StatusBadgeProps) => {
   const style = styleByStatus[status] ?? {
     bg: colors.surfaceMuted,
     fg: colors.textSecondary,
   };
+  const label = labelByStatus[status] ?? toTitleCase(status);
 
   return (
     <View style={[styles.badge, { backgroundColor: style.bg }]}> 
-      <Text style={[styles.label, { color: style.fg }]}>{toTitleCase(status)}</Text>
+      <Text style={[styles.label, { color: style.fg }]}>{label}</Text>
     </View>
   );
 };

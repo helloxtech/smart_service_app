@@ -7,15 +7,14 @@ import { EmptyState } from '../components/EmptyState';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import { InboxStackParamList } from '../navigation/types';
-import { ConversationStatus } from '../types/domain';
 
-type InboxFilter = 'all' | ConversationStatus;
+type InboxFilter = 'all' | 'new' | 'waiting' | 'in_progress' | 'closed';
 
 const filters: Array<{ label: string; value: InboxFilter }> = [
   { label: 'All', value: 'all' },
   { label: 'New', value: 'new' },
-  { label: 'Assigned', value: 'assigned' },
   { label: 'Needs Reply', value: 'waiting' },
+  { label: 'In Progress', value: 'in_progress' },
   { label: 'Closed', value: 'closed' },
 ];
 
@@ -31,10 +30,8 @@ export const InboxScreen = ({ navigation }: Props) => {
       return conversations;
     }
 
-    if (activeFilter === 'assigned') {
-      return conversations.filter(
-        (item) => item.status === 'assigned' || item.status === 'waiting',
-      );
+    if (activeFilter === 'in_progress') {
+      return conversations.filter((item) => item.status === 'assigned');
     }
 
     return conversations.filter((item) => item.status === activeFilter);
