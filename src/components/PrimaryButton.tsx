@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, spacing, typography } from '../theme/theme';
 
 interface PrimaryButtonProps {
@@ -7,6 +7,7 @@ interface PrimaryButtonProps {
   onPress: () => void;
   disabled?: boolean;
   variant?: 'solid' | 'outline';
+  loading?: boolean;
 }
 
 export const PrimaryButton = ({
@@ -14,18 +15,30 @@ export const PrimaryButton = ({
   onPress,
   disabled = false,
   variant = 'solid',
+  loading = false,
 }: PrimaryButtonProps) => {
   const solid = variant === 'solid';
+  const isDisabled = disabled || loading;
+  const textColor = solid ? '#FFFFFF' : colors.textPrimary;
 
   return (
     <Pressable
-      disabled={disabled}
+      disabled={isDisabled}
       onPress={onPress}
-      style={[styles.base, solid ? styles.solid : styles.outline, disabled && styles.disabled]}
+      style={[styles.base, solid ? styles.solid : styles.outline, isDisabled && styles.disabled]}
     >
-      <Text style={[styles.label, solid ? styles.labelSolid : styles.labelOutline]}>
-        {label}
-      </Text>
+      <View style={styles.contentRow}>
+        {loading && (
+          <ActivityIndicator
+            size="small"
+            color={textColor}
+            style={styles.spinner}
+          />
+        )}
+        <Text style={[styles.label, solid ? styles.labelSolid : styles.labelOutline]}>
+          {label}
+        </Text>
+      </View>
     </Pressable>
   );
 };
@@ -59,5 +72,13 @@ const styles = StyleSheet.create({
   },
   labelOutline: {
     color: colors.textPrimary,
+  },
+  contentRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  spinner: {
+    marginRight: 8,
   },
 });
