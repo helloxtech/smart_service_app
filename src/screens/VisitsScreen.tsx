@@ -87,6 +87,35 @@ export const VisitsScreen = () => {
     return map;
   }, [unitOptions]);
 
+  const recentUnitOptions = useMemo(() => {
+    const seen = new Set<string>();
+    const recent: UnitOption[] = [];
+
+    visitNotes
+      .slice()
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .forEach((item) => {
+        const key = `${item.propertyId}-${item.unitId}`;
+        if (seen.has(key)) {
+          return;
+        }
+
+        const label = unitLabelByKey.get(key);
+        if (!label) {
+          return;
+        }
+
+        seen.add(key);
+        recent.push({
+          propertyId: item.propertyId,
+          unitId: item.unitId,
+          label,
+        });
+      });
+
+    return recent.slice(0, 5);
+  }, [unitLabelByKey, visitNotes]);
+
   const maintenanceTitleById = useMemo(() => {
     const map = new Map<string, string>();
     maintenanceRequests.forEach((item) => {
@@ -125,11 +154,22 @@ export const VisitsScreen = () => {
 
   const filteredUnitOptions = useMemo(() => {
     const query = unitSearch.trim().toLowerCase();
-    if (!query) {
-      return unitOptions;
+    if (query.length < 2) {
+      return [];
     }
 
-    return unitOptions.filter((option) => option.label.toLowerCase().includes(query));
+    return unitOptions
+      .filter((option) => option.label.toLowerCase().includes(query))
+      .slice(0, 8);
+  }, [unitOptions, unitSearch]);
+
+  const unitSearchMatchCount = useMemo(() => {
+    const query = unitSearch.trim().toLowerCase();
+    if (query.length < 2) {
+      return 0;
+    }
+
+    return unitOptions.filter((option) => option.label.toLowerCase().includes(query)).length;
   }, [unitOptions, unitSearch]);
 
   const pickPhotoFromLibrary = async () => {
@@ -242,36 +282,80 @@ export const VisitsScreen = () => {
           placeholderTextColor="#8D9AA5"
         />
         <Text style={styles.fieldHint}>
-          Available units from your assigned properties. This is not recent search history.
+          For large portfolios, start typing to find a unit quickly.
         </Text>
 
-        <Text style={styles.secondaryLabel}>Available units</Text>
-        <View style={styles.pillWrap}>
-          {filteredUnitOptions.map((option) => {
-            const key = `${option.propertyId}-${option.unitId}`;
-            const selected = selectedUnitKey === key;
-            return (
-              <Pressable
-                key={key}
-                onPress={() => setSelectedUnitKey(key)}
-                style={[styles.pill, selected && styles.pillSelected]}
-              >
-                <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                  {option.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
-        {filteredUnitOptions.length === 0 && (
-          <Text style={styles.emptyHint}>No property/unit matched your search.</Text>
+        {recentUnitOptions.length > 0 && (
+          <>
+            <Text style={styles.secondaryLabel}>Recent units</Text>
+            <View style={styles.pillWrap}>
+              {recentUnitOptions.map((option) => {
+                const key = `${option.propertyId}-${option.unitId}`;
+                const selected = selectedUnitKey === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setSelectedUnitKey(key)}
+                    style={[styles.pill, selected && styles.pillSelected]}
+                  >
+                    <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
+
+        <Text style={styles.secondaryLabel}>Search results</Text>
+        {unitSearch.trim().length < 2 ? (
+          <Text style={styles.emptyHint}>Type at least 2 characters to search units.</Text>
+        ) : (
+          <>
+            <View style={styles.pillWrap}>
+              {filteredUnitOptions.map((option) => {
+                const key = `${option.propertyId}-${option.unitId}`;
+                const selected = selectedUnitKey === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setSelectedUnitKey(key)}
+                    style={[styles.pill, selected && styles.pillSelected]}
+                  >
+                    <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+            {filteredUnitOptions.length === 0 && (
+              <Text style={styles.emptyHint}>No property/unit matched your search.</Text>
+            )}
+            {unitSearchMatchCount > filteredUnitOptions.length && (
+              <Text style={styles.emptyHint}>
+                Showing first {filteredUnitOptions.length} of {unitSearchMatchCount} matches.
+              </Text>
+            )}
+          </>
+        )}
+
+        {selectedUnit && (
+          <View style={styles.linkedRequestRow}>
+            <Text style={styles.linkedRequestText}>Selected unit: {selectedUnit.label}</Text>
+            <Pressable onPress={() => setSelectedUnitKey(undefined)}>
+              <Text style={styles.clearLink}>Clear</Text>
+            </Pressable>
+          </View>
         )}
 
         <Text style={styles.fieldLabel}>Related maintenance request (optional)</Text>
         <Text style={styles.fieldHint}>
           Tap one request to link it. Tap again to clear selection.
         </Text>
-        <View style={styles.pillWrap}>
+
+        <View style={styles.requestOptions}>
           {maintenanceForUnit.map((item) => {
             const selected = selectedMaintenanceId === item.id;
             return (
@@ -282,20 +366,33 @@ export const VisitsScreen = () => {
                     prev === item.id ? undefined : item.id,
                   )
                 }
-                style={[styles.pill, selected && styles.pillSelected]}
+                style={[styles.requestOption, selected && styles.requestOptionSelected]}
               >
-                <View style={styles.pillRow}>
-                  {selected && (
-                    <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
-                  )}
-                  <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                    {item.title}
-                  </Text>
+                <View style={styles.requestOptionMain}>
+                  <Ionicons
+                    name={selected ? 'radio-button-on' : 'radio-button-off'}
+                    size={16}
+                    color={selected ? colors.accent : colors.textSecondary}
+                  />
+                  <View style={styles.requestCopy}>
+                    <Text style={[styles.requestTitle, selected && styles.requestTitleSelected]}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.requestMeta}>
+                      Status: {item.status.replace('_', ' ')} · Priority: {item.priority}
+                    </Text>
+                  </View>
                 </View>
+                {selected && (
+                  <View style={styles.requestSelectedBadge}>
+                    <Text style={styles.requestSelectedBadgeText}>Selected</Text>
+                  </View>
+                )}
               </Pressable>
             );
           })}
         </View>
+
         {selectedMaintenance && (
           <View style={styles.linkedRequestRow}>
             <Text style={styles.linkedRequestText}>Linked request: {selectedMaintenance.title}</Text>
@@ -304,6 +401,7 @@ export const VisitsScreen = () => {
             </Pressable>
           </View>
         )}
+
         {maintenanceForUnit.length === 0 && (
           <Text style={styles.emptyHint}>No maintenance request for the selected unit.</Text>
         )}
@@ -495,10 +593,60 @@ const styles = StyleSheet.create({
   pillTextSelected: {
     color: colors.accent,
   },
-  pillRow: {
+  requestOptions: {
+    gap: 8,
+  },
+  requestOption: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    backgroundColor: '#FAFCFD',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  requestOptionSelected: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentMuted,
+  },
+  requestOptionMain: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+  },
+  requestCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  requestTitle: {
+    color: colors.textPrimary,
+    fontSize: typography.small,
+    fontWeight: '700',
+  },
+  requestTitleSelected: {
+    color: colors.accent,
+  },
+  requestMeta: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  requestSelectedBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    backgroundColor: '#E7F6EE',
+  },
+  requestSelectedBadgeText: {
+    color: colors.accent,
+    fontSize: 10,
+    fontWeight: '800',
+    textTransform: 'uppercase',
   },
   linkedRequestRow: {
     flexDirection: 'row',
