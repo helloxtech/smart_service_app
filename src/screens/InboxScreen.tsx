@@ -11,9 +11,9 @@ import { InboxStackParamList } from '../navigation/types';
 type InboxFilter = 'all' | 'new' | 'waiting' | 'in_progress' | 'closed';
 
 const primaryFilters: Array<{ label: string; value: InboxFilter }> = [
+  { label: 'New', value: 'new' },
   { label: 'Needs Reply', value: 'waiting' },
   { label: 'In Progress', value: 'in_progress' },
-  { label: 'New', value: 'new' },
 ];
 
 const secondaryFilters: Array<{ label: string; value: InboxFilter }> = [
