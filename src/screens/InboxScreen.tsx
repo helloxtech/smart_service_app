@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConversationCard } from '../components/ConversationCard';
@@ -10,11 +10,14 @@ import { InboxStackParamList } from '../navigation/types';
 
 type InboxFilter = 'all' | 'new' | 'waiting' | 'in_progress' | 'closed';
 
-const filters: Array<{ label: string; value: InboxFilter }> = [
-  { label: 'All', value: 'all' },
-  { label: 'New', value: 'new' },
+const primaryFilters: Array<{ label: string; value: InboxFilter }> = [
   { label: 'Needs Reply', value: 'waiting' },
   { label: 'In Progress', value: 'in_progress' },
+  { label: 'New', value: 'new' },
+];
+
+const secondaryFilters: Array<{ label: string; value: InboxFilter }> = [
+  { label: 'All', value: 'all' },
   { label: 'Closed', value: 'closed' },
 ];
 
@@ -26,6 +29,7 @@ export const InboxScreen = ({ navigation }: Props) => {
   const [activeFilter, setActiveFilter] = useState<InboxFilter>('all');
   const counts = useMemo(
     () => ({
+      all: conversations.length,
       new: conversations.filter((item) => item.status === 'new').length,
       waiting: conversations.filter((item) => item.status === 'waiting').length,
       in_progress: conversations.filter((item) => item.status === 'assigned').length,
@@ -46,6 +50,31 @@ export const InboxScreen = ({ navigation }: Props) => {
     return conversations.filter((item) => item.status === activeFilter);
   }, [activeFilter, conversations]);
 
+  const renderFilterChip = (filter: { label: string; value: InboxFilter }) => {
+    const selected = activeFilter === filter.value;
+    const count = counts[filter.value];
+
+    return (
+      <Pressable
+        key={filter.value}
+        onPress={() => setActiveFilter(filter.value)}
+        style={[styles.filterChip, selected && styles.filterChipActive]}
+      >
+        <Text
+          numberOfLines={1}
+          style={[styles.filterLabel, selected && styles.filterLabelActive]}
+        >
+          {filter.label}
+        </Text>
+        <View style={[styles.countBadge, selected && styles.countBadgeActive]}>
+          <Text style={[styles.countLabel, selected && styles.countLabelActive]}>
+            {count}
+          </Text>
+        </View>
+      </Pressable>
+    );
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.header}>
@@ -55,48 +84,14 @@ export const InboxScreen = ({ navigation }: Props) => {
         </View>
       </View>
 
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.filterScroll}
-        contentContainerStyle={styles.filterRow}
-      >
-        {filters.map((filter) => {
-          const selected = activeFilter === filter.value;
-          const count =
-            filter.value === 'new'
-              ? counts.new
-              : filter.value === 'waiting'
-                ? counts.waiting
-                : filter.value === 'in_progress'
-                  ? counts.in_progress
-                  : filter.value === 'closed'
-                    ? counts.closed
-                    : undefined;
-
-          return (
-            <Pressable
-              key={filter.value}
-              onPress={() => setActiveFilter(filter.value)}
-              style={[styles.filterChip, selected && styles.filterChipActive]}
-            >
-              <Text
-                numberOfLines={1}
-                style={[styles.filterLabel, selected && styles.filterLabelActive]}
-              >
-                {filter.label}
-              </Text>
-              {typeof count === 'number' && (
-                <View style={[styles.countBadge, selected && styles.countBadgeActive]}>
-                  <Text style={[styles.countLabel, selected && styles.countLabelActive]}>
-                    {count}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          );
-        })}
-      </ScrollView>
+      <View style={styles.filterGroup}>
+        <View style={styles.filterRow}>
+          {primaryFilters.map(renderFilterChip)}
+        </View>
+        <View style={styles.filterRowSecondary}>
+          {secondaryFilters.map(renderFilterChip)}
+        </View>
+      </View>
 
       <FlatList
         data={filteredConversations}
@@ -145,26 +140,32 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     marginTop: 2,
   },
-  filterScroll: {
+  filterGroup: {
     marginBottom: spacing.md,
   },
   filterRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
-    paddingRight: spacing.md,
+    gap: 8,
+  },
+  filterRowSecondary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 8,
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
-    alignSelf: 'flex-start',
+    justifyContent: 'center',
     borderWidth: 1,
     borderColor: colors.inputBorder,
     borderRadius: 999,
-    paddingHorizontal: 9,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     backgroundColor: colors.surface,
-    gap: 4,
+    gap: 5,
+    minHeight: 36,
   },
   filterChipActive: {
     borderColor: colors.accent,
