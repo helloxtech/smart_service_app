@@ -109,7 +109,7 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
 
       {canEditStatus && (
         <PrimaryButton
-          label="Open full work order in Dataverse"
+          label="Open full work order in Rental Smart"
           onPress={() => void openExternalUrl(request.dataverseUrl)}
           variant="outline"
         />

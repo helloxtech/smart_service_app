@@ -111,9 +111,12 @@ export const MaintenanceCard = ({
             })}
           </View>
 
-          <Pressable style={styles.editButton} onPress={() => setIsEditingStatus(false)}>
-            <Text style={styles.editButtonText}>Cancel status edit</Text>
-          </Pressable>
+          <View style={styles.editHelpRow}>
+            <Text style={styles.editHint}>Choose one status to apply.</Text>
+            <Pressable onPress={() => setIsEditingStatus(false)} hitSlop={8}>
+              <Text style={styles.cancelLink}>Cancel</Text>
+            </Pressable>
+          </View>
         </>
       ) : (
         <Pressable style={styles.editButton} onPress={() => setIsEditingStatus(true)}>
@@ -123,7 +126,7 @@ export const MaintenanceCard = ({
 
       {showDataverseLink && onOpenDataverse && (
         <Pressable style={styles.deepLinkButton} onPress={onOpenDataverse}>
-          <Text style={styles.deepLinkLabel}>Open full work order in Dataverse</Text>
+          <Text style={styles.deepLinkLabel}>Open full work order in Rental Smart</Text>
         </Pressable>
       )}
     </View>
@@ -209,6 +212,22 @@ const styles = StyleSheet.create({
   },
   optionTextSelected: {
     color: colors.accent,
+  },
+  editHelpRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 2,
+  },
+  editHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  cancelLink: {
+    color: '#2457A5',
+    fontSize: 12,
+    fontWeight: '700',
   },
   readOnlyLabel: {
     color: colors.textSecondary,

@@ -319,18 +319,18 @@ export const ConversationDetailScreen = ({ route }: Props) => {
                 <PrimaryButton label="Accept Handoff" onPress={onAssign} />
               )}
               <PrimaryButton
-                label="Open Property in Dataverse"
+                label="Open Property in Rental Smart"
                 onPress={() => openExternalUrl(conversation.property.dataverseUrl)}
                 variant="outline"
               />
               <PrimaryButton
-                label="Open Unit in Dataverse"
+                label="Open Unit in Rental Smart"
                 onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
                 variant="outline"
               />
               {conversation.dataverseCaseUrl && (
                 <PrimaryButton
-                  label="Open Related Case"
+                  label="Open Related Case in Rental Smart"
                   onPress={() => openExternalUrl(conversation.dataverseCaseUrl!)}
                   variant="outline"
                 />

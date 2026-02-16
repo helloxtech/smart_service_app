@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,6 +12,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/EmptyState';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -27,6 +29,7 @@ interface UnitOption {
 export const VisitsScreen = () => {
   const { conversations, visitNotes, maintenanceRequests, addVisitNote } = useAppStore();
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
 
   const unitOptions = useMemo<UnitOption[]>(() => {
     const dedup = new Map<string, UnitOption>();
@@ -54,6 +57,7 @@ export const VisitsScreen = () => {
   const [unitSearch, setUnitSearch] = useState('');
   const [note, setNote] = useState('');
   const [photoUri, setPhotoUri] = useState<string | undefined>();
+  const [selectedRecentNoteId, setSelectedRecentNoteId] = useState<string | undefined>();
 
   const selectedUnit = unitOptions.find(
     (option) => `${option.propertyId}-${option.unitId}` === selectedUnitKey,
@@ -70,6 +74,32 @@ export const VisitsScreen = () => {
     );
   }, [maintenanceRequests, selectedUnit]);
 
+  const selectedMaintenance = useMemo(
+    () => maintenanceForUnit.find((item) => item.id === selectedMaintenanceId),
+    [maintenanceForUnit, selectedMaintenanceId],
+  );
+
+  const unitLabelByKey = useMemo(() => {
+    const map = new Map<string, string>();
+    unitOptions.forEach((option) => {
+      map.set(`${option.propertyId}-${option.unitId}`, option.label);
+    });
+    return map;
+  }, [unitOptions]);
+
+  const maintenanceTitleById = useMemo(() => {
+    const map = new Map<string, string>();
+    maintenanceRequests.forEach((item) => {
+      map.set(item.id, item.title);
+    });
+    return map;
+  }, [maintenanceRequests]);
+
+  const selectedRecentNote = useMemo(
+    () => visitNotes.find((item) => item.id === selectedRecentNoteId),
+    [selectedRecentNoteId, visitNotes],
+  );
+
   useEffect(() => {
     if (unitOptions.length === 0) {
       setSelectedUnitKey(undefined);
@@ -84,6 +114,14 @@ export const VisitsScreen = () => {
       setSelectedUnitKey(`${unitOptions[0].propertyId}-${unitOptions[0].unitId}`);
     }
   }, [selectedUnitKey, unitOptions]);
+
+  useEffect(() => {
+    if (!selectedMaintenanceId) return;
+    const stillExists = maintenanceForUnit.some((item) => item.id === selectedMaintenanceId);
+    if (!stillExists) {
+      setSelectedMaintenanceId(undefined);
+    }
+  }, [maintenanceForUnit, selectedMaintenanceId]);
 
   const filteredUnitOptions = useMemo(() => {
     const query = unitSearch.trim().toLowerCase();
@@ -172,6 +210,18 @@ export const VisitsScreen = () => {
     }
   };
 
+  const openMaintenanceDetail = (requestId: string) => {
+    navigation.navigate('MaintenanceTab', {
+      screen: 'MaintenanceDetail',
+      params: { requestId },
+    });
+  };
+
+  const selectedRecentNoteUnitLabel = selectedRecentNote
+    ? unitLabelByKey.get(`${selectedRecentNote.propertyId}-${selectedRecentNote.unitId}`)
+      ?? `${selectedRecentNote.propertyId} · ${selectedRecentNote.unitId}`
+    : undefined;
+
   return (
     <ScrollView
       style={styles.container}
@@ -191,6 +241,11 @@ export const VisitsScreen = () => {
           placeholder="Search property or unit"
           placeholderTextColor="#8D9AA5"
         />
+        <Text style={styles.fieldHint}>
+          Available units from your assigned properties. This is not recent search history.
+        </Text>
+
+        <Text style={styles.secondaryLabel}>Available units</Text>
         <View style={styles.pillWrap}>
           {filteredUnitOptions.map((option) => {
             const key = `${option.propertyId}-${option.unitId}`;
@@ -213,6 +268,9 @@ export const VisitsScreen = () => {
         )}
 
         <Text style={styles.fieldLabel}>Related maintenance request (optional)</Text>
+        <Text style={styles.fieldHint}>
+          Tap one request to link it. Tap again to clear selection.
+        </Text>
         <View style={styles.pillWrap}>
           {maintenanceForUnit.map((item) => {
             const selected = selectedMaintenanceId === item.id;
@@ -226,13 +284,26 @@ export const VisitsScreen = () => {
                 }
                 style={[styles.pill, selected && styles.pillSelected]}
               >
-                <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                  {item.title}
-                </Text>
+                <View style={styles.pillRow}>
+                  {selected && (
+                    <Ionicons name="checkmark-circle" size={14} color={colors.accent} />
+                  )}
+                  <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                    {item.title}
+                  </Text>
+                </View>
               </Pressable>
             );
           })}
         </View>
+        {selectedMaintenance && (
+          <View style={styles.linkedRequestRow}>
+            <Text style={styles.linkedRequestText}>Linked request: {selectedMaintenance.title}</Text>
+            <Pressable onPress={() => setSelectedMaintenanceId(undefined)}>
+              <Text style={styles.clearLink}>Clear</Text>
+            </Pressable>
+          </View>
+        )}
         {maintenanceForUnit.length === 0 && (
           <Text style={styles.emptyHint}>No maintenance request for the selected unit.</Text>
         )}
@@ -268,18 +339,74 @@ export const VisitsScreen = () => {
           />
         ) : (
           visitNotes.map((item) => (
-            <View key={item.id} style={styles.noteCard}>
+            <Pressable
+              key={item.id}
+              style={styles.noteCard}
+              onPress={() => setSelectedRecentNoteId(item.id)}
+            >
               <Text style={styles.noteMeta}>
-                {item.propertyId} · {item.unitId} · {formatRelativeTime(item.createdAt)}
+                {unitLabelByKey.get(`${item.propertyId}-${item.unitId}`)
+                  ?? `${item.propertyId} · ${item.unitId}`} · {formatRelativeTime(item.createdAt)}
               </Text>
               <Text style={styles.noteBody}>{item.note}</Text>
+              {item.maintenanceRequestId && (
+                <Text style={styles.noteContext}>
+                  Related request: {maintenanceTitleById.get(item.maintenanceRequestId) ?? item.maintenanceRequestId}
+                </Text>
+              )}
               {item.photoUri && (
                 <Image source={{ uri: item.photoUri }} style={styles.notePhotoThumb} />
               )}
-            </View>
+              <Text style={styles.openNoteHint}>Tap to open</Text>
+            </Pressable>
           ))
         )}
       </View>
+
+      <Modal visible={Boolean(selectedRecentNote)} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Site note details</Text>
+              <Pressable onPress={() => setSelectedRecentNoteId(undefined)}>
+                <Ionicons name="close" size={20} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+
+            {selectedRecentNote && (
+              <>
+                <Text style={styles.modalMeta}>
+                  {selectedRecentNoteUnitLabel} · {formatRelativeTime(selectedRecentNote.createdAt)}
+                </Text>
+                {selectedRecentNote.maintenanceRequestId && (
+                  <Text style={styles.modalMeta}>
+                    Related request: {maintenanceTitleById.get(selectedRecentNote.maintenanceRequestId) ?? selectedRecentNote.maintenanceRequestId}
+                  </Text>
+                )}
+                <Text style={styles.modalBody}>{selectedRecentNote.note}</Text>
+                {selectedRecentNote.photoUri && (
+                  <Image source={{ uri: selectedRecentNote.photoUri }} style={styles.modalImage} />
+                )}
+
+                {selectedRecentNote.maintenanceRequestId && (
+                  <PrimaryButton
+                    label="Open related maintenance request"
+                    onPress={() => {
+                      openMaintenanceDetail(selectedRecentNote.maintenanceRequestId!);
+                      setSelectedRecentNoteId(undefined);
+                    }}
+                    variant="outline"
+                  />
+                )}
+                <PrimaryButton
+                  label="Close"
+                  onPress={() => setSelectedRecentNoteId(undefined)}
+                />
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 };
@@ -323,6 +450,17 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4,
   },
+  fieldHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  secondaryLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+    marginTop: 2,
+  },
   searchInput: {
     borderWidth: 1,
     borderColor: colors.inputBorder,
@@ -356,6 +494,31 @@ const styles = StyleSheet.create({
   },
   pillTextSelected: {
     color: colors.accent,
+  },
+  pillRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  linkedRequestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.accentMuted,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  linkedRequestText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
+    flex: 1,
+  },
+  clearLink: {
+    color: '#2457A5',
+    fontSize: 12,
+    fontWeight: '700',
   },
   emptyHint: {
     color: colors.textSecondary,
@@ -411,9 +574,58 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     lineHeight: 20,
   },
+  noteContext: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   notePhotoThumb: {
     width: 86,
     height: 86,
     borderRadius: radius.sm,
+  },
+  openNoteHint: {
+    color: '#2457A5',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  modalCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: {
+    color: colors.textPrimary,
+    fontSize: typography.heading,
+    fontWeight: '800',
+  },
+  modalMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  modalBody: {
+    color: colors.textPrimary,
+    fontSize: typography.small,
+    lineHeight: 20,
+  },
+  modalImage: {
+    width: '100%',
+    height: 220,
+    borderRadius: radius.md,
   },
 });
