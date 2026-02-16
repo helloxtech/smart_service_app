@@ -18,11 +18,17 @@ import { PrimaryButton } from '../components/PrimaryButton';
 import { MaintenanceStackParamList } from '../navigation/types';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import { MaintenanceStatus } from '../types/domain';
+import { MaintenanceStatus, SiteVisitNote } from '../types/domain';
 import { formatRelativeTime } from '../utils/format';
 import { openExternalUrl } from '../utils/linking';
 
 type Props = NativeStackScreenProps<MaintenanceStackParamList, 'MaintenanceDetail'>;
+
+const getTimelineSourceLabel = (item: SiteVisitNote): string => {
+  if (item.source === 'chat') return 'Chat update';
+  if (item.source === 'visit') return 'Site visit';
+  return 'Maintenance update';
+};
 
 export const MaintenanceDetailScreen = ({ route }: Props) => {
   const { requestId } = route.params;
@@ -38,6 +44,7 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
 
   const [updateNote, setUpdateNote] = useState('');
   const [updatePhotoUri, setUpdatePhotoUri] = useState<string | undefined>();
+  const [isTimelineExpanded, setIsTimelineExpanded] = useState(false);
 
   const canEditStatus = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
   const canAddUpdates = Boolean(currentUser);
@@ -78,6 +85,9 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()),
     [requestId, visitNotes],
   );
+
+  const latestUpdate = requestUpdates[0];
+  const olderUpdates = requestUpdates.slice(1);
 
   const onStatusChange = async (status: MaintenanceStatus) => {
     if (!request) return;
@@ -189,6 +199,52 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
         <Text style={styles.metaLine}>Last updated: {formatRelativeTime(request.updatedAt)}</Text>
         <Text style={styles.metaLine}>Priority: {request.priority.toUpperCase()}</Text>
         <Text style={styles.metaLine}>Current status: {request.status.replace('_', ' ')}</Text>
+
+        {latestUpdate ? (
+          <View style={styles.latestUpdateCard}>
+            <Text style={styles.updateMeta}>
+              {getTimelineSourceLabel(latestUpdate)}
+              {latestUpdate.authorName ? ` · ${latestUpdate.authorName}` : ''} ·{' '}
+              {formatRelativeTime(latestUpdate.createdAt)}
+            </Text>
+            <Text style={styles.updateText}>{latestUpdate.note}</Text>
+            {latestUpdate.photoUri && (
+              <Image source={{ uri: latestUpdate.photoUri }} style={styles.updateImage} />
+            )}
+          </View>
+        ) : (
+          <Text style={styles.metaLine}>No timeline entries yet.</Text>
+        )}
+
+        {olderUpdates.length > 0 && (
+          <Pressable
+            style={styles.timelineToggle}
+            onPress={() => setIsTimelineExpanded((prev) => !prev)}
+          >
+            <Text style={styles.timelineToggleText}>
+              {isTimelineExpanded
+                ? 'Hide details'
+                : `View details (${olderUpdates.length} earlier update${olderUpdates.length > 1 ? 's' : ''})`}
+            </Text>
+          </Pressable>
+        )}
+
+        {isTimelineExpanded && olderUpdates.length > 0 && (
+          <View style={styles.updatesList}>
+            {olderUpdates.map((item) => (
+              <View key={item.id} style={styles.updateItem}>
+                <Text style={styles.updateMeta}>
+                  {getTimelineSourceLabel(item)}
+                  {item.authorName ? ` · ${item.authorName}` : ''} · {formatRelativeTime(item.createdAt)}
+                </Text>
+                <Text style={styles.updateText}>{item.note}</Text>
+                {item.photoUri && (
+                  <Image source={{ uri: item.photoUri }} style={styles.updateImage} />
+                )}
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {relatedConversation ? (
@@ -240,38 +296,6 @@ export const MaintenanceDetailScreen = ({ route }: Props) => {
         </View>
       )}
 
-      <View style={styles.card}>
-        <Text style={styles.cardTitle}>Recent updates</Text>
-
-        {requestUpdates.length === 0 ? (
-          <Text style={styles.metaLine}>No updates yet for this request.</Text>
-        ) : (
-          <View style={styles.updatesList}>
-            {requestUpdates.map((item) => {
-              const sourceLabel =
-                item.source === 'chat'
-                  ? 'Chat photo'
-                  : item.source === 'visit'
-                    ? 'Site visit'
-                    : 'Maintenance update';
-
-              return (
-                <View key={item.id} style={styles.updateItem}>
-                  <Text style={styles.updateMeta}>
-                    {sourceLabel}
-                    {item.authorName ? ` · ${item.authorName}` : ''} · {formatRelativeTime(item.createdAt)}
-                  </Text>
-                  <Text style={styles.updateText}>{item.note}</Text>
-                  {item.photoUri && (
-                    <Image source={{ uri: item.photoUri }} style={styles.updateImage} />
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        )}
-      </View>
-
       {canEditStatus && (
         <PrimaryButton
           label="Open full work order in Rental Smart"
@@ -322,6 +346,28 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     fontWeight: '600',
     lineHeight: 20,
+  },
+  latestUpdateCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: '#FAFCFD',
+    padding: spacing.sm,
+    gap: 8,
+  },
+  timelineToggle: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#FAFCFD',
+  },
+  timelineToggleText: {
+    color: colors.accent,
+    fontSize: typography.small,
+    fontWeight: '700',
   },
   noteInput: {
     minHeight: 96,

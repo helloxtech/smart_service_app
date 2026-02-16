@@ -303,13 +303,6 @@ export const ConversationDetailScreen = ({ route }: Props) => {
                 onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
                 variant="outline"
               />
-              {conversation.dataverseCaseUrl && (
-                <PrimaryButton
-                  label="Open Related Case in Rental Smart"
-                  onPress={() => openExternalUrl(conversation.dataverseCaseUrl!)}
-                  variant="outline"
-                />
-              )}
             </View>
           )}
         </View>

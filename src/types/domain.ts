@@ -78,5 +78,4 @@ export interface Conversation {
   botEscalated: boolean;
   unreadCount: number;
   lastMessageAt: string;
-  dataverseCaseUrl?: string;
 }

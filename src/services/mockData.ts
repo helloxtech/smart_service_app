@@ -44,8 +44,6 @@ export const mockConversations: Conversation[] = [
     botEscalated: true,
     unreadCount: 3,
     lastMessageAt: new Date(Date.now() - 8 * 60 * 1000).toISOString(),
-    dataverseCaseUrl:
-      'https://org.crm.dynamics.com/main.aspx?etn=incident&pagetype=entityrecord&id=case-001',
   },
   {
     id: 'conv-002',
@@ -73,8 +71,6 @@ export const mockConversations: Conversation[] = [
     botEscalated: false,
     unreadCount: 0,
     lastMessageAt: new Date(Date.now() - 42 * 60 * 1000).toISOString(),
-    dataverseCaseUrl:
-      'https://org.crm.dynamics.com/main.aspx?etn=incident&pagetype=entityrecord&id=case-002',
   },
   {
     id: 'conv-003',
