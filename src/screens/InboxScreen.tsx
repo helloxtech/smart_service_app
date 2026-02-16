@@ -58,6 +58,7 @@ export const InboxScreen = ({ navigation }: Props) => {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.filterScroll}
         contentContainerStyle={styles.filterRow}
       >
         {filters.map((filter) => {
@@ -80,6 +81,7 @@ export const InboxScreen = ({ navigation }: Props) => {
               style={[styles.filterChip, selected && styles.filterChipActive]}
             >
               <Text
+                numberOfLines={1}
                 style={[styles.filterLabel, selected && styles.filterLabelActive]}
               >
                 {filter.label}
@@ -143,21 +145,26 @@ const styles = StyleSheet.create({
     fontSize: typography.small,
     marginTop: 2,
   },
-  filterRow: {
-    gap: 8,
+  filterScroll: {
     marginBottom: spacing.md,
+  },
+  filterRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
     paddingRight: spacing.md,
   },
   filterChip: {
     flexDirection: 'row',
     alignItems: 'center',
+    alignSelf: 'flex-start',
     borderWidth: 1,
     borderColor: colors.inputBorder,
-    borderRadius: radius.md,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
     backgroundColor: colors.surface,
-    gap: 6,
+    gap: 4,
   },
   filterChipActive: {
     borderColor: colors.accent,
@@ -165,15 +172,15 @@ const styles = StyleSheet.create({
   },
   filterLabel: {
     color: colors.textSecondary,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
   filterLabelActive: {
     color: colors.accent,
   },
   countBadge: {
-    minWidth: 18,
-    paddingHorizontal: 5,
+    minWidth: 16,
+    paddingHorizontal: 4,
     paddingVertical: 1,
     borderRadius: 999,
     backgroundColor: '#EAECEF',
@@ -185,7 +192,7 @@ const styles = StyleSheet.create({
   },
   countLabel: {
     color: colors.textSecondary,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '800',
   },
   countLabelActive: {
