@@ -24,7 +24,7 @@ const secondaryFilters: Array<{ label: string; value: InboxFilter }> = [
 type Props = NativeStackScreenProps<InboxStackParamList, 'Inbox'>;
 
 export const InboxScreen = ({ navigation }: Props) => {
-  const { conversations, currentUser } = useAppStore();
+  const { conversations, currentUser, signOut } = useAppStore();
   const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<InboxFilter>('all');
   const counts = useMemo(
@@ -75,6 +75,10 @@ export const InboxScreen = ({ navigation }: Props) => {
     );
   };
 
+  const onSignOut = () => {
+    signOut();
+  };
+
   return (
     <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.header}>
@@ -82,6 +86,9 @@ export const InboxScreen = ({ navigation }: Props) => {
           <Text style={styles.title}>Live Inbox</Text>
           <Text style={styles.subtitle}>Hello {currentUser?.name.split(' ')[0] ?? 'PM'}</Text>
         </View>
+        <Pressable onPress={onSignOut} style={styles.signOutButton}>
+          <Text style={styles.signOutText}>Sign out</Text>
+        </Pressable>
       </View>
 
       <View style={styles.filterGroup}>
@@ -127,7 +134,8 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
+    alignItems: 'center',
+    justifyContent: 'space-between',
     marginBottom: spacing.md,
   },
   title: {
@@ -139,6 +147,19 @@ const styles = StyleSheet.create({
     color: colors.textSecondary,
     fontSize: typography.small,
     marginTop: 2,
+  },
+  signOutButton: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: colors.surface,
+  },
+  signOutText: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    fontWeight: '700',
   },
   filterGroup: {
     marginBottom: spacing.md,
