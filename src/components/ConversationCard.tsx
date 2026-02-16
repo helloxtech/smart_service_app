@@ -34,7 +34,7 @@ export const ConversationCard = ({ conversation, onPress }: ConversationCardProp
       </View>
 
       {conversation.botEscalated && (
-        <Text style={styles.escalated}>Bot requested PM handoff</Text>
+        <Text style={styles.escalated}>Bot requested manager takeover</Text>
       )}
     </Pressable>
   );

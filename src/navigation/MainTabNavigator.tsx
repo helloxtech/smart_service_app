@@ -5,11 +5,17 @@ import { MainTabParamList } from './types';
 import { InboxStackNavigator } from './InboxStackNavigator';
 import { MaintenanceScreen } from '../screens/MaintenanceScreen';
 import { VisitsScreen } from '../screens/VisitsScreen';
+import { RoleDashboardScreen } from '../screens/RoleDashboardScreen';
+import { RoleProfileScreen } from '../screens/RoleProfileScreen';
 import { colors } from '../theme/theme';
+import { useAppStore } from '../store/AppStore';
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 
 export const MainTabNavigator = () => {
+  const { currentUser } = useAppStore();
+  const isPmWorkflow = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -28,37 +34,47 @@ export const MainTabNavigator = () => {
           borderTopColor: colors.border,
         },
         tabBarIcon: ({ color, size }) => {
-          if (route.name === 'InboxTab') {
-            return <Ionicons name="chatbubble-ellipses-outline" color={color} size={size} />;
+          if (isPmWorkflow) {
+            if (route.name === 'InboxTab') {
+              return <Ionicons name="chatbubble-ellipses-outline" color={color} size={size} />;
+            }
+
+            if (route.name === 'MaintenanceTab') {
+              return <Ionicons name="construct-outline" color={color} size={size} />;
+            }
+
+            return <Ionicons name="clipboard-outline" color={color} size={size} />;
           }
 
+          if (route.name === 'InboxTab') {
+            return <Ionicons name="home-outline" color={color} size={size} />;
+          }
           if (route.name === 'MaintenanceTab') {
             return <Ionicons name="construct-outline" color={color} size={size} />;
           }
-
-          return <Ionicons name="clipboard-outline" color={color} size={size} />;
+          return <Ionicons name="person-circle-outline" color={color} size={size} />;
         },
       })}
     >
       <Tab.Screen
         name="InboxTab"
-        component={InboxStackNavigator}
+        component={isPmWorkflow ? InboxStackNavigator : RoleDashboardScreen}
         options={{
-          title: 'Inbox',
+          title: isPmWorkflow ? 'Inbox' : 'Home',
         }}
       />
       <Tab.Screen
         name="MaintenanceTab"
         component={MaintenanceScreen}
         options={{
-          title: 'Maintenance',
+          title: isPmWorkflow ? 'Maintenance' : 'Requests',
         }}
       />
       <Tab.Screen
         name="VisitsTab"
-        component={VisitsScreen}
+        component={isPmWorkflow ? VisitsScreen : RoleProfileScreen}
         options={{
-          title: 'Site Visits',
+          title: isPmWorkflow ? 'Site Visits' : 'Account',
         }}
       />
     </Tab.Navigator>

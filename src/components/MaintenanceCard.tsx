@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { MaintenanceRequest, MaintenanceStatus } from '../types/domain';
 import { colors, radius, spacing, typography } from '../theme/theme';
@@ -7,10 +7,13 @@ import { StatusBadge } from './StatusBadge';
 
 interface MaintenanceCardProps {
   item: MaintenanceRequest;
-  onOpenDataverse: () => void;
+  onOpenDataverse?: () => void;
   onStatusChange: (status: MaintenanceStatus) => void;
   compact?: boolean;
   readOnly?: boolean;
+  propertyName?: string;
+  unitLabel?: string;
+  showDataverseLink?: boolean;
 }
 
 const options: MaintenanceStatus[] = ['new', 'in_progress', 'done'];
@@ -21,7 +24,23 @@ export const MaintenanceCard = ({
   onStatusChange,
   compact = false,
   readOnly = false,
+  propertyName,
+  unitLabel,
+  showDataverseLink = true,
 }: MaintenanceCardProps) => {
+  const [isEditingStatus, setIsEditingStatus] = useState(false);
+
+  useEffect(() => {
+    setIsEditingStatus(false);
+  }, [item.status]);
+
+  const onSelectStatus = (status: MaintenanceStatus) => {
+    if (status !== item.status) {
+      onStatusChange(status);
+    }
+    setIsEditingStatus(false);
+  };
+
   return (
     <View style={[styles.card, compact && styles.compact]}>
       <View style={styles.headerRow}>
@@ -32,33 +51,55 @@ export const MaintenanceCard = ({
         <StatusBadge status={item.status} />
       </View>
 
-      <Text style={styles.updated}>Updated {formatRelativeTime(item.updatedAt)}</Text>
-
-      <View style={styles.optionRow}>
-        {options.map((option) => {
-          const selected = option === item.status;
-          return (
-            <Pressable
-              key={option}
-              disabled={readOnly}
-              onPress={() => onStatusChange(option)}
-              style={[
-                styles.optionButton,
-                selected && styles.optionSelected,
-                readOnly && styles.optionDisabled,
-              ]}
-            >
-              <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
-                {option === 'in_progress' ? 'In Progress' : option === 'new' ? 'New' : 'Done'}
-              </Text>
-            </Pressable>
-          );
-        })}
+      <View style={styles.metaWrap}>
+        <Text style={styles.metaText}>
+          {propertyName ?? item.propertyId} · {unitLabel ?? item.unitId}
+        </Text>
+        <Text style={styles.metaText}>Priority: {item.priority.toUpperCase()}</Text>
       </View>
 
-      <Pressable style={styles.deepLinkButton} onPress={onOpenDataverse}>
-        <Text style={styles.deepLinkLabel}>Open full work order in Dataverse</Text>
-      </Pressable>
+      <Text style={styles.updated}>Updated {formatRelativeTime(item.updatedAt)}</Text>
+
+      {readOnly ? (
+        <Text style={styles.readOnlyLabel}>Status is view only for this record.</Text>
+      ) : isEditingStatus ? (
+        <>
+          <View style={styles.optionRow}>
+            {options.map((option) => {
+              const selected = option === item.status;
+              return (
+                <Pressable
+                  key={option}
+                  onPress={() => onSelectStatus(option)}
+                  style={[styles.optionButton, selected && styles.optionSelected]}
+                >
+                  <Text style={[styles.optionText, selected && styles.optionTextSelected]}>
+                    {option === 'in_progress'
+                      ? 'In Progress'
+                      : option === 'new'
+                        ? 'New'
+                        : 'Done'}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <Pressable style={styles.editButton} onPress={() => setIsEditingStatus(false)}>
+            <Text style={styles.editButtonText}>Cancel status edit</Text>
+          </Pressable>
+        </>
+      ) : (
+        <Pressable style={styles.editButton} onPress={() => setIsEditingStatus(true)}>
+          <Text style={styles.editButtonText}>Edit status</Text>
+        </Pressable>
+      )}
+
+      {showDataverseLink && onOpenDataverse && (
+        <Pressable style={styles.deepLinkButton} onPress={onOpenDataverse}>
+          <Text style={styles.deepLinkLabel}>Open full work order in Dataverse</Text>
+        </Pressable>
+      )}
     </View>
   );
 };
@@ -99,6 +140,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '500',
   },
+  metaWrap: {
+    gap: 2,
+  },
+  metaText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
   optionRow: {
     flexDirection: 'row',
     gap: 8,
@@ -125,8 +174,24 @@ const styles = StyleSheet.create({
   optionTextSelected: {
     color: colors.accent,
   },
-  optionDisabled: {
-    opacity: 0.5,
+  readOnlyLabel: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  editButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: '#FAFCFD',
+  },
+  editButtonText: {
+    color: colors.textPrimary,
+    fontSize: 12,
+    fontWeight: '700',
   },
   deepLinkButton: {
     paddingVertical: 8,

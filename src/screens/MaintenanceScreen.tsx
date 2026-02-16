@@ -7,6 +7,7 @@ import {
   View,
   Pressable,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/EmptyState';
 import { MaintenanceCard } from '../components/MaintenanceCard';
 import { useAppStore } from '../store/AppStore';
@@ -22,8 +23,10 @@ const filters: Array<{ label: string; value: MaintenanceStatus | 'all' }> = [
 ];
 
 export const MaintenanceScreen = () => {
-  const { maintenanceRequests, updateMaintenanceStatus } = useAppStore();
+  const { maintenanceRequests, updateMaintenanceStatus, conversations, currentUser } = useAppStore();
+  const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<MaintenanceStatus | 'all'>('all');
+  const canEditStatus = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
 
   const filtered = useMemo(() => {
     if (activeFilter === 'all') {
@@ -41,11 +44,29 @@ export const MaintenanceScreen = () => {
     }
   };
 
+  const propertyById = useMemo(() => {
+    const map = new Map<string, string>();
+    conversations.forEach((item) => {
+      map.set(item.property.id, item.property.name);
+    });
+    return map;
+  }, [conversations]);
+
+  const unitById = useMemo(() => {
+    const map = new Map<string, string>();
+    conversations.forEach((item) => {
+      map.set(item.unit.id, item.unit.label);
+    });
+    return map;
+  }, [conversations]);
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <Text style={styles.title}>Maintenance</Text>
       <Text style={styles.subtitle}>
-        Update request status quickly from field operations.
+        {canEditStatus
+          ? 'Review details in app. Status changes require tapping Edit status.'
+          : 'Track request details and progress updates in app.'}
       </Text>
 
       <View style={styles.filterRow}>
@@ -76,7 +97,13 @@ export const MaintenanceScreen = () => {
             <MaintenanceCard
               key={item.id}
               item={item}
-              onOpenDataverse={() => openExternalUrl(item.dataverseUrl)}
+              propertyName={propertyById.get(item.propertyId)}
+              unitLabel={unitById.get(item.unitId)}
+              readOnly={!canEditStatus}
+              showDataverseLink={canEditStatus}
+              onOpenDataverse={
+                canEditStatus ? () => openExternalUrl(item.dataverseUrl) : undefined
+              }
               onStatusChange={(status) => void onStatusChange(item.id, status)}
             />
           ))

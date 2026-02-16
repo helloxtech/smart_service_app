@@ -1,6 +1,6 @@
-# Smart Service (PM Mobile App)
+# Smart Service (Role-Based Mobile App)
 
-Smart Service is a cross-platform iOS/Android mobile app for Property Managers.
+Smart Service is a cross-platform iOS/Android mobile app with role-based layouts.
 
 V1 scope implemented:
 - Live inbox with bot-to-PM handoff flow
@@ -9,6 +9,7 @@ V1 scope implemented:
 - Maintenance request summary and status updates (`New`, `In Progress`, `Done`)
 - Site visit note capture with optional photo attachment
 - Deep links to full Dataverse records when more detail is needed
+- Role-based sign-in and tab layout (`PM`, `Supervisor`, `Tenant`, `Landlord`)
 
 ## Tech Stack
 
@@ -21,7 +22,7 @@ V1 scope implemented:
 
 - `src/navigation/`
   - `RootNavigator.tsx` (auth gating)
-  - `MainTabNavigator.tsx` (Inbox, Maintenance, Site Visits)
+  - `MainTabNavigator.tsx` (role-based tabs)
   - `InboxStackNavigator.tsx` (Inbox list -> Conversation detail)
 - `src/screens/`
   - `SignInScreen.tsx`
@@ -29,6 +30,8 @@ V1 scope implemented:
   - `ConversationDetailScreen.tsx`
   - `MaintenanceScreen.tsx`
   - `VisitsScreen.tsx`
+  - `RoleDashboardScreen.tsx`
+  - `RoleProfileScreen.tsx`
 - `src/components/`
   - Reusable cards and status/UI primitives
 - `src/store/AppStore.tsx`
@@ -44,6 +47,28 @@ npm install
 npm run ios
 # or
 npm run android
+```
+
+For iOS Simulator on the same Mac, prefer localhost mode:
+
+```bash
+npm run ios:localhost
+```
+
+For a physical phone, use one of:
+
+```bash
+npm run start:lan
+# or, if LAN is blocked:
+npm run start:tunnel
+```
+
+If Expo Go hangs on `Opening project...`, stop stale Metro processes first, then restart with the correct host mode:
+
+```bash
+pkill -f "expo start" || true
+npm run ios:localhost
+# or npm run start:tunnel for physical device
 ```
 
 Optional type check:
@@ -64,6 +89,7 @@ EXPO_PUBLIC_CHAT_WS_URL=wss://your-chat-worker.example.com
 
 - `EXPO_PUBLIC_USE_MOCK=true` keeps local mock mode for development/demo.
 - Set `EXPO_PUBLIC_USE_MOCK=false` to use remote BFF + chat backend.
+- Remote BFF endpoints currently support PM/Supervisor flows; Tenant/Landlord role is available in mock mode until tenant/landlord APIs are enabled.
 
 ## Integration Notes (Production)
 

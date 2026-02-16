@@ -12,17 +12,21 @@ import {
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { UserRole } from '../types/domain';
+
+const roleOptions: UserRole[] = ['PM', 'Supervisor', 'Tenant', 'Landlord'];
 
 export const SignInScreen = () => {
   const { signIn } = useAppStore();
   const [email, setEmail] = useState('alex.chen@rentalsmart.ca');
   const [password, setPassword] = useState('');
+  const [selectedRole, setSelectedRole] = useState<UserRole>('PM');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const onSubmit = async () => {
     try {
       setIsSubmitting(true);
-      await signIn(email, password);
+      await signIn(email, password, selectedRole);
     } catch (error) {
       Alert.alert('Sign-in failed', (error as Error).message);
     } finally {
@@ -39,9 +43,28 @@ export const SignInScreen = () => {
         <Text style={styles.badge}>SMART SERVICE</Text>
         <Text style={styles.heading}>Property Manager Workspace</Text>
         <Text style={styles.copy}>
-          Manage live visitor chat handoff, maintenance updates, and site visit notes
-          from one mobile workspace.
+          Role-based workspace for PM, Supervisor, Tenant, and Landlord.
         </Text>
+
+        <View style={styles.roleWrap}>
+          <Text style={styles.fieldLabel}>Sign in as</Text>
+          <View style={styles.roleGrid}>
+            {roleOptions.map((role) => {
+              const selected = selectedRole === role;
+              return (
+                <Pressable
+                  key={role}
+                  onPress={() => setSelectedRole(role)}
+                  style={[styles.roleChip, selected && styles.roleChipActive]}
+                >
+                  <Text style={[styles.roleChipText, selected && styles.roleChipTextActive]}>
+                    {role}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
 
         <View style={styles.form}>
           <View style={styles.fieldWrap}>
@@ -75,9 +98,10 @@ export const SignInScreen = () => {
             disabled={isSubmitting || !email || !password}
           />
 
-          <Pressable>
-            <Text style={styles.helper}>Uses Entra ID + BFF token exchange in production.</Text>
-          </Pressable>
+          <Text style={styles.helper}>
+            Production remote mode currently supports PM/Supervisor endpoints. Tenant/Landlord
+            is enabled in mock mode.
+          </Text>
         </View>
       </View>
     </KeyboardAvoidingView>
@@ -124,6 +148,34 @@ const styles = StyleSheet.create({
   form: {
     gap: spacing.md,
     marginTop: spacing.sm,
+  },
+  roleWrap: {
+    gap: 8,
+  },
+  roleGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  roleChip: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    backgroundColor: '#FAFCFD',
+  },
+  roleChipActive: {
+    borderColor: colors.accent,
+    backgroundColor: colors.accentMuted,
+  },
+  roleChipText: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  roleChipTextActive: {
+    color: colors.accent,
   },
   fieldWrap: {
     gap: 6,

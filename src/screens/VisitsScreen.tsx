@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Image,
@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/EmptyState';
 import { PrimaryButton } from '../components/PrimaryButton';
 import { useAppStore } from '../store/AppStore';
@@ -25,6 +26,7 @@ interface UnitOption {
 
 export const VisitsScreen = () => {
   const { conversations, visitNotes, maintenanceRequests, addVisitNote } = useAppStore();
+  const insets = useSafeAreaInsets();
 
   const unitOptions = useMemo<UnitOption[]>(() => {
     const dedup = new Map<string, UnitOption>();
@@ -49,6 +51,7 @@ export const VisitsScreen = () => {
       : undefined,
   );
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
+  const [unitSearch, setUnitSearch] = useState('');
   const [note, setNote] = useState('');
   const [photoUri, setPhotoUri] = useState<string | undefined>();
 
@@ -67,7 +70,31 @@ export const VisitsScreen = () => {
     );
   }, [maintenanceRequests, selectedUnit]);
 
-  const pickPhoto = async () => {
+  useEffect(() => {
+    if (unitOptions.length === 0) {
+      setSelectedUnitKey(undefined);
+      return;
+    }
+
+    const selectedStillExists = unitOptions.some(
+      (option) => `${option.propertyId}-${option.unitId}` === selectedUnitKey,
+    );
+
+    if (!selectedUnitKey || !selectedStillExists) {
+      setSelectedUnitKey(`${unitOptions[0].propertyId}-${unitOptions[0].unitId}`);
+    }
+  }, [selectedUnitKey, unitOptions]);
+
+  const filteredUnitOptions = useMemo(() => {
+    const query = unitSearch.trim().toLowerCase();
+    if (!query) {
+      return unitOptions;
+    }
+
+    return unitOptions.filter((option) => option.label.toLowerCase().includes(query));
+  }, [unitOptions, unitSearch]);
+
+  const pickPhotoFromLibrary = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Permission needed', 'Please enable photo library access.');
@@ -82,6 +109,38 @@ export const VisitsScreen = () => {
     if (!result.canceled && result.assets.length > 0) {
       setPhotoUri(result.assets[0].uri);
     }
+  };
+
+  const capturePhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Please enable camera access.');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        setPhotoUri(result.assets[0].uri);
+      }
+    } catch {
+      Alert.alert(
+        'Camera unavailable',
+        'Camera capture is not available in this simulator. Use a physical device or photo library.',
+      );
+    }
+  };
+
+  const choosePhoto = () => {
+    Alert.alert('Attach photo', 'Choose photo source', [
+      { text: 'Take photo', onPress: () => void capturePhoto() },
+      { text: 'Photo library', onPress: () => void pickPhotoFromLibrary() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const saveNote = async () => {
@@ -114,7 +173,10 @@ export const VisitsScreen = () => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.sm }]}
+    >
       <Text style={styles.title}>Site Visits</Text>
       <Text style={styles.subtitle}>Capture onsite findings with photos and notes.</Text>
 
@@ -122,8 +184,15 @@ export const VisitsScreen = () => {
         <Text style={styles.sectionTitle}>New site note</Text>
 
         <Text style={styles.fieldLabel}>Property / Unit</Text>
+        <TextInput
+          style={styles.searchInput}
+          value={unitSearch}
+          onChangeText={setUnitSearch}
+          placeholder="Search property or unit"
+          placeholderTextColor="#8D9AA5"
+        />
         <View style={styles.pillWrap}>
-          {unitOptions.map((option) => {
+          {filteredUnitOptions.map((option) => {
             const key = `${option.propertyId}-${option.unitId}`;
             const selected = selectedUnitKey === key;
             return (
@@ -139,6 +208,9 @@ export const VisitsScreen = () => {
             );
           })}
         </View>
+        {filteredUnitOptions.length === 0 && (
+          <Text style={styles.emptyHint}>No property/unit matched your search.</Text>
+        )}
 
         <Text style={styles.fieldLabel}>Related maintenance request (optional)</Text>
         <View style={styles.pillWrap}>
@@ -161,6 +233,9 @@ export const VisitsScreen = () => {
             );
           })}
         </View>
+        {maintenanceForUnit.length === 0 && (
+          <Text style={styles.emptyHint}>No maintenance request for the selected unit.</Text>
+        )}
 
         <TextInput
           style={styles.textArea}
@@ -171,7 +246,7 @@ export const VisitsScreen = () => {
           placeholderTextColor="#8D9AA5"
         />
 
-        <Pressable style={styles.photoButton} onPress={pickPhoto}>
+        <Pressable style={styles.photoButton} onPress={choosePhoto}>
           <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
           <Text style={styles.photoButtonLabel}>
             {photoUri ? 'Replace photo' : 'Attach photo'}
@@ -248,6 +323,15 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 4,
   },
+  searchInput: {
+    borderWidth: 1,
+    borderColor: colors.inputBorder,
+    borderRadius: radius.md,
+    minHeight: 42,
+    paddingHorizontal: 12,
+    color: colors.textPrimary,
+    backgroundColor: '#FAFCFD',
+  },
   pillWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -272,6 +356,10 @@ const styles = StyleSheet.create({
   },
   pillTextSelected: {
     color: colors.accent,
+  },
+  emptyHint: {
+    color: colors.textSecondary,
+    fontSize: 12,
   },
   textArea: {
     minHeight: 120,

@@ -13,6 +13,7 @@ import {
   Message,
   PmUser,
   SiteVisitNote,
+  UserRole,
 } from '../types/domain';
 import {
   mockConversations,
@@ -45,7 +46,7 @@ interface AppStoreValue {
   maintenanceRequests: MaintenanceRequest[];
   visitNotes: SiteVisitNote[];
   isRemoteMode: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
+  signIn: (email: string, password: string, role: UserRole) => Promise<void>;
   signOut: () => void;
   markConversationRead: (conversationId: string) => void;
   assignConversation: (conversationId: string) => Promise<void>;
@@ -72,6 +73,15 @@ const sortConversations = (items: Conversation[]): Conversation[] => {
 };
 
 const initialConversations = sortConversations(mockConversations);
+const isPmRole = (role: UserRole | undefined): boolean =>
+  role === 'PM' || role === 'Supervisor';
+
+const defaultNameByRole: Record<UserRole, string> = {
+  PM: 'Alex Chen',
+  Supervisor: 'Jordan Lee',
+  Tenant: 'Taylor Wong',
+  Landlord: 'Morgan Patel',
+};
 
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
@@ -151,22 +161,40 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     [currentUser?.name],
   );
 
-  const signIn = useCallback(async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string, role: UserRole) => {
     if (!email.toLowerCase().includes('@')) {
       throw new Error('Please enter a valid work email.');
     }
 
     if (runtimeConfig.useMockData) {
+      const localPart = email.split('@')[0]?.trim();
+      const fallbackName = defaultNameByRole[role];
+      const displayName = localPart
+        ? localPart
+            .split(/[._-]/g)
+            .filter(Boolean)
+            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+            .join(' ')
+        : fallbackName;
+
       setApiAuthToken(null);
       setCurrentUser({
         ...mockPmUser,
+        name: displayName || fallbackName,
         email,
+        role,
       });
       setConversations(initialConversations);
       setMessages(mockMessages);
       setMaintenanceRequests(mockMaintenanceRequests);
       setVisitNotes(mockVisitNotes);
       return;
+    }
+
+    if (!isPmRole(role)) {
+      throw new Error(
+        'Tenant/Landlord remote sign-in is not enabled yet. Use mock mode or enable tenant/landlord APIs in BFF.',
+      );
     }
 
     const session = await remoteApi.signIn(email, password);
@@ -191,7 +219,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
   const assignConversation = useCallback(
     async (conversationId: string) => {
-      if (!currentUser) {
+      if (!currentUser || !isPmRole(currentUser.role)) {
         throw new Error('Please sign in before assigning conversations.');
       }
 
@@ -320,6 +348,10 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
   const updateMaintenanceStatus = useCallback(
     async (requestId: string, status: MaintenanceStatus) => {
+      if (!isPmRole(currentUser?.role)) {
+        throw new Error('Only PM/Supervisor can update maintenance status.');
+      }
+
       const now = new Date().toISOString();
 
       if (!runtimeConfig.useMockData) {
@@ -343,7 +375,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         ),
       );
     },
-    [],
+    [currentUser?.role],
   );
 
   const addVisitNote = useCallback(async (payload: AddVisitNoteInput) => {

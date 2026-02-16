@@ -1,12 +1,13 @@
 export type ConversationStatus = 'new' | 'assigned' | 'waiting' | 'closed';
 export type SenderType = 'visitor' | 'pm' | 'bot' | 'system';
 export type MaintenanceStatus = 'new' | 'in_progress' | 'done';
+export type UserRole = 'PM' | 'Supervisor' | 'Tenant' | 'Landlord';
 
 export interface PmUser {
   id: string;
   name: string;
   email: string;
-  role: 'PM' | 'Supervisor';
+  role: UserRole;
 }
 
 export interface PropertyInfo {

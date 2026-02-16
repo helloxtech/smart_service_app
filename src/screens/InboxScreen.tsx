@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ConversationCard } from '../components/ConversationCard';
 import { EmptyState } from '../components/EmptyState';
 import { useAppStore } from '../store/AppStore';
@@ -20,6 +21,7 @@ type Props = NativeStackScreenProps<InboxStackParamList, 'Inbox'>;
 
 export const InboxScreen = ({ navigation }: Props) => {
   const { conversations, currentUser } = useAppStore();
+  const insets = useSafeAreaInsets();
   const [activeFilter, setActiveFilter] = useState<ConversationStatus | 'all'>('all');
 
   const filteredConversations = useMemo(() => {
@@ -31,7 +33,7 @@ export const InboxScreen = ({ navigation }: Props) => {
   }, [activeFilter, conversations]);
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { paddingTop: insets.top + spacing.sm }]}>
       <View style={styles.header}>
         <View>
           <Text style={styles.title}>Live Inbox</Text>

@@ -185,7 +185,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     ]);
   };
 
-  const pickPhoto = async () => {
+  const pickPhotoFromLibrary = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
       Alert.alert('Photo permission required', 'Please allow photo access to attach an image.');
@@ -200,6 +200,38 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     if (!result.canceled && result.assets.length > 0) {
       setSelectedPhotoUri(result.assets[0].uri);
     }
+  };
+
+  const capturePhoto = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Camera permission required', 'Please allow camera access to capture a photo.');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['images'],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        setSelectedPhotoUri(result.assets[0].uri);
+      }
+    } catch {
+      Alert.alert(
+        'Camera unavailable',
+        'Camera capture is not available in this simulator. Use a physical device or photo library.',
+      );
+    }
+  };
+
+  const choosePhoto = () => {
+    Alert.alert('Attach photo', 'Choose photo source', [
+      { text: 'Take photo', onPress: () => void capturePhoto() },
+      { text: 'Photo library', onPress: () => void pickPhotoFromLibrary() },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const saveVisitNote = async () => {
@@ -286,7 +318,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           <View style={styles.handoffBanner}>
             <Ionicons name="sparkles" size={16} color={colors.warning} />
             <Text style={styles.handoffText}>
-              Bot escalated this chat to PM due to confidence threshold.
+              Bot escalated this chat to a manager based on confidence rules.
             </Text>
           </View>
         )}
@@ -329,6 +361,8 @@ export const ConversationDetailScreen = ({ route }: Props) => {
                 compact
                 item={request}
                 readOnly={isClosed}
+                propertyName={conversation.property.name}
+                unitLabel={conversation.unit.label}
                 onOpenDataverse={() => openExternalUrl(request.dataverseUrl)}
                 onStatusChange={(status) => onUpdateStatus(request.id, status)}
               />
@@ -419,7 +453,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
               multiline
             />
 
-            <Pressable style={styles.photoPicker} onPress={() => void pickPhoto()}>
+            <Pressable style={styles.photoPicker} onPress={() => void choosePhoto()}>
               <Ionicons name="image-outline" size={18} color={colors.textPrimary} />
               <Text style={styles.photoPickerText}>
                 {selectedPhotoUri ? 'Photo attached' : 'Attach photo'}
