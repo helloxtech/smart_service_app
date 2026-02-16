@@ -48,11 +48,7 @@ export const VisitsScreen = () => {
     return Array.from(dedup.values());
   }, [conversations]);
 
-  const [selectedUnitKey, setSelectedUnitKey] = useState(
-    unitOptions.length > 0
-      ? `${unitOptions[0].propertyId}-${unitOptions[0].unitId}`
-      : undefined,
-  );
+  const [selectedUnitKey, setSelectedUnitKey] = useState<string | undefined>();
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
   const [unitSearch, setUnitSearch] = useState('');
   const [note, setNote] = useState('');
@@ -70,7 +66,9 @@ export const VisitsScreen = () => {
 
     return maintenanceRequests.filter(
       (item) =>
-        item.propertyId === selectedUnit.propertyId && item.unitId === selectedUnit.unitId,
+        item.propertyId === selectedUnit.propertyId
+        && item.unitId === selectedUnit.unitId
+        && item.status !== 'done',
     );
   }, [maintenanceRequests, selectedUnit]);
 
@@ -130,8 +128,7 @@ export const VisitsScreen = () => {
   );
 
   useEffect(() => {
-    if (unitOptions.length === 0) {
-      setSelectedUnitKey(undefined);
+    if (!selectedUnitKey) {
       return;
     }
 
@@ -139,8 +136,8 @@ export const VisitsScreen = () => {
       (option) => `${option.propertyId}-${option.unitId}` === selectedUnitKey,
     );
 
-    if (!selectedUnitKey || !selectedStillExists) {
-      setSelectedUnitKey(`${unitOptions[0].propertyId}-${unitOptions[0].unitId}`);
+    if (!selectedStillExists) {
+      setSelectedUnitKey(undefined);
     }
   }, [selectedUnitKey, unitOptions]);
 
@@ -285,29 +282,6 @@ export const VisitsScreen = () => {
           For large portfolios, start typing to find a unit quickly.
         </Text>
 
-        {recentUnitOptions.length > 0 && (
-          <>
-            <Text style={styles.secondaryLabel}>Recent units</Text>
-            <View style={styles.pillWrap}>
-              {recentUnitOptions.map((option) => {
-                const key = `${option.propertyId}-${option.unitId}`;
-                const selected = selectedUnitKey === key;
-                return (
-                  <Pressable
-                    key={key}
-                    onPress={() => setSelectedUnitKey(key)}
-                    style={[styles.pill, selected && styles.pillSelected]}
-                  >
-                    <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
-                      {option.label}
-                    </Text>
-                  </Pressable>
-                );
-              })}
-            </View>
-          </>
-        )}
-
         <Text style={styles.secondaryLabel}>Search results</Text>
         {unitSearch.trim().length < 2 ? (
           <Text style={styles.emptyHint}>Type at least 2 characters to search units.</Text>
@@ -341,6 +315,29 @@ export const VisitsScreen = () => {
           </>
         )}
 
+        {recentUnitOptions.length > 0 && (
+          <>
+            <Text style={styles.secondaryLabel}>Recent units</Text>
+            <View style={styles.pillWrap}>
+              {recentUnitOptions.map((option) => {
+                const key = `${option.propertyId}-${option.unitId}`;
+                const selected = selectedUnitKey === key;
+                return (
+                  <Pressable
+                    key={key}
+                    onPress={() => setSelectedUnitKey(key)}
+                    style={[styles.pill, selected && styles.pillSelected]}
+                  >
+                    <Text style={[styles.pillText, selected && styles.pillTextSelected]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        )}
+
         {selectedUnit && (
           <View style={styles.linkedRequestRow}>
             <Text style={styles.linkedRequestText}>Selected unit: {selectedUnit.label}</Text>
@@ -350,60 +347,64 @@ export const VisitsScreen = () => {
           </View>
         )}
 
-        <Text style={styles.fieldLabel}>Related maintenance request (optional)</Text>
-        <Text style={styles.fieldHint}>
-          Tap one request to link it. Tap again to clear selection.
-        </Text>
+        {selectedUnit && (
+          <>
+            <Text style={styles.fieldLabel}>Related maintenance request (optional)</Text>
+            <Text style={styles.fieldHint}>
+              Showing active requests only. Tap one request to link it. Tap again to clear selection.
+            </Text>
 
-        <View style={styles.requestOptions}>
-          {maintenanceForUnit.map((item) => {
-            const selected = selectedMaintenanceId === item.id;
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() =>
-                  setSelectedMaintenanceId((prev) =>
-                    prev === item.id ? undefined : item.id,
-                  )
-                }
-                style={[styles.requestOption, selected && styles.requestOptionSelected]}
-              >
-                <View style={styles.requestOptionMain}>
-                  <Ionicons
-                    name={selected ? 'radio-button-on' : 'radio-button-off'}
-                    size={16}
-                    color={selected ? colors.accent : colors.textSecondary}
-                  />
-                  <View style={styles.requestCopy}>
-                    <Text style={[styles.requestTitle, selected && styles.requestTitleSelected]}>
-                      {item.title}
-                    </Text>
-                    <Text style={styles.requestMeta}>
-                      Status: {item.status.replace('_', ' ')} · Priority: {item.priority}
-                    </Text>
-                  </View>
-                </View>
-                {selected && (
-                  <View style={styles.requestSelectedBadge}>
-                    <Text style={styles.requestSelectedBadgeText}>Selected</Text>
-                  </View>
-                )}
-              </Pressable>
-            );
-          })}
-        </View>
+            <View style={styles.requestOptions}>
+              {maintenanceForUnit.map((item) => {
+                const selected = selectedMaintenanceId === item.id;
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() =>
+                      setSelectedMaintenanceId((prev) =>
+                        prev === item.id ? undefined : item.id,
+                      )
+                    }
+                    style={[styles.requestOption, selected && styles.requestOptionSelected]}
+                  >
+                    <View style={styles.requestOptionMain}>
+                      <Ionicons
+                        name={selected ? 'radio-button-on' : 'radio-button-off'}
+                        size={16}
+                        color={selected ? colors.accent : colors.textSecondary}
+                      />
+                      <View style={styles.requestCopy}>
+                        <Text style={[styles.requestTitle, selected && styles.requestTitleSelected]}>
+                          {item.title}
+                        </Text>
+                        <Text style={styles.requestMeta}>
+                          Status: {item.status.replace('_', ' ')} · Priority: {item.priority}
+                        </Text>
+                      </View>
+                    </View>
+                    {selected && (
+                      <View style={styles.requestSelectedBadge}>
+                        <Text style={styles.requestSelectedBadgeText}>Selected</Text>
+                      </View>
+                    )}
+                  </Pressable>
+                );
+              })}
+            </View>
 
-        {selectedMaintenance && (
-          <View style={styles.linkedRequestRow}>
-            <Text style={styles.linkedRequestText}>Linked request: {selectedMaintenance.title}</Text>
-            <Pressable onPress={() => setSelectedMaintenanceId(undefined)}>
-              <Text style={styles.clearLink}>Clear</Text>
-            </Pressable>
-          </View>
-        )}
+            {selectedMaintenance && (
+              <View style={styles.linkedRequestRow}>
+                <Text style={styles.linkedRequestText}>Linked request: {selectedMaintenance.title}</Text>
+                <Pressable onPress={() => setSelectedMaintenanceId(undefined)}>
+                  <Text style={styles.clearLink}>Clear</Text>
+                </Pressable>
+              </View>
+            )}
 
-        {maintenanceForUnit.length === 0 && (
-          <Text style={styles.emptyHint}>No maintenance request for the selected unit.</Text>
+            {maintenanceForUnit.length === 0 && (
+              <Text style={styles.emptyHint}>No active maintenance request for the selected unit.</Text>
+            )}
+          </>
         )}
 
         <TextInput
