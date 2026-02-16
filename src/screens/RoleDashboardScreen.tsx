@@ -2,15 +2,12 @@ import React, { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { ConversationCard } from '../components/ConversationCard';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
-import { openExternalUrl } from '../utils/linking';
 
-type PropertySummary = {
-  id: string;
-  name: string;
-  dataverseUrl: string;
+type MaintenanceMetric = {
+  label: string;
+  value: number;
 };
 
 export const RoleDashboardScreen = () => {
@@ -23,37 +20,27 @@ export const RoleDashboardScreen = () => {
   const isLandlord = role === 'Landlord';
   const isAdmin = role === 'Supervisor';
 
-  const properties = useMemo<PropertySummary[]>(
+  const properties = useMemo(
     () =>
       Array.from(
         conversations.reduce((map, item) => {
-          map.set(item.property.id, {
-            id: item.property.id,
-            name: item.property.name,
-            dataverseUrl: item.property.dataverseUrl,
-          });
+          map.set(item.property.id, item.property.name);
           return map;
-        }, new Map<string, PropertySummary>()).values(),
-      ),
+        }, new Map<string, string>()).entries(),
+      ).map(([id, name]) => ({ id, name })),
     [conversations],
   );
-
-  const activeConversations = useMemo(
-    () =>
-      [...conversations]
-        .filter((item) => item.status !== 'closed')
-        .sort(
-          (a, b) =>
-            new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime(),
-        ),
-    [conversations],
-  );
-
-  const escalatedConversation = activeConversations.find((item) => item.botEscalated);
 
   const openRequests = maintenanceRequests.filter((item) => item.status !== 'done').length;
-  const activeChats = activeConversations.length;
-  const pendingHandoffs = conversations.filter((item) => item.botEscalated).length;
+  const inProgressRequests = maintenanceRequests.filter((item) => item.status === 'in_progress').length;
+  const completedRequests = maintenanceRequests.filter((item) => item.status === 'done').length;
+
+  const metrics: MaintenanceMetric[] = [
+    { label: 'Open Requests', value: openRequests },
+    { label: 'In Progress', value: inProgressRequests },
+    { label: 'Completed', value: completedRequests },
+    { label: isTenant ? 'Linked Properties' : 'Portfolio Sites', value: properties.length },
+  ];
 
   const heading = isTenant
     ? 'Tenant Home'
@@ -63,23 +50,41 @@ export const RoleDashboardScreen = () => {
         ? 'Admin Home'
         : 'Workspace';
   const subtitle = isTenant
-    ? 'Track request progress and chat updates for your unit.'
+    ? 'Track request progress for your home and view service updates.'
     : isLandlord
-      ? 'Monitor service demand and tenant conversations across your portfolio.'
+      ? 'Monitor maintenance activity across your rental portfolio.'
       : isAdmin
-        ? 'Oversee portfolio requests and escalation flow.'
+        ? 'Oversee request volume and property health from one place.'
         : 'Role-based dashboard.';
 
-  const openConversation = (conversationId: string) => {
-    navigation.navigate('ConversationDetail', { conversationId });
+  const workflowText = isTenant
+    ? 'Open each request to review details and status history.'
+    : isLandlord
+      ? 'Review open issues and progress updates property by property.'
+      : isAdmin
+        ? 'Use maintenance views to monitor queue health and completion pace.'
+        : 'Use tabs below to continue.';
+
+  const sortedRequests = useMemo(
+    () =>
+      [...maintenanceRequests].sort(
+        (a, b) =>
+          new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+      ),
+    [maintenanceRequests],
+  );
+
+  const openMaintenanceList = () => {
+    navigation.getParent()?.navigate('MaintenanceTab', {
+      screen: 'MaintenanceList',
+    });
   };
 
-  const openMaintenanceTab = () => {
-    navigation.getParent()?.navigate('MaintenanceTab');
-  };
-
-  const openProperty = (property: PropertySummary) => {
-    void openExternalUrl(property.dataverseUrl);
+  const openMaintenanceDetail = (requestId: string) => {
+    navigation.getParent()?.navigate('MaintenanceTab', {
+      screen: 'MaintenanceDetail',
+      params: { requestId },
+    });
   };
 
   return (
@@ -91,75 +96,42 @@ export const RoleDashboardScreen = () => {
       <Text style={styles.subtitle}>{subtitle}</Text>
 
       <View style={styles.metricGrid}>
-        <Pressable style={styles.metricCard} onPress={openMaintenanceTab}>
-          <Text style={styles.metricValue}>{openRequests}</Text>
-          <Text style={styles.metricLabel}>Open Requests</Text>
-        </Pressable>
-        <Pressable
-          style={styles.metricCard}
-          onPress={() => {
-            const first = activeConversations[0];
-            if (!first) return;
-            openConversation(first.id);
-          }}
-        >
-          <Text style={styles.metricValue}>{activeChats}</Text>
-          <Text style={styles.metricLabel}>Active Chats</Text>
-        </Pressable>
-        <Pressable
-          style={styles.metricCard}
-          onPress={() => {
-            const first = properties[0];
-            if (!first) return;
-            openProperty(first);
-          }}
-        >
-          <Text style={styles.metricValue}>{properties.length}</Text>
-          <Text style={styles.metricLabel}>{isTenant ? 'Linked Properties' : 'Portfolio Sites'}</Text>
-        </Pressable>
-        <Pressable
-          style={styles.metricCard}
-          onPress={() => {
-            if (!escalatedConversation) return;
-            openConversation(escalatedConversation.id);
-          }}
-        >
-          <Text style={styles.metricValue}>{pendingHandoffs}</Text>
-          <Text style={styles.metricLabel}>PM Handoff Alerts</Text>
-        </Pressable>
+        {metrics.map((metric) => (
+          <Pressable key={metric.label} style={styles.metricCard} onPress={openMaintenanceList}>
+            <Text style={styles.metricValue}>{metric.value}</Text>
+            <Text style={styles.metricLabel}>{metric.label}</Text>
+          </Pressable>
+        ))}
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>
-          {isTenant ? 'What you can do' : isLandlord ? 'Owner workflow' : isAdmin ? 'Admin workflow' : 'Overview'}
-        </Text>
-        <Text style={styles.cardBody}>
-          {isTenant
-            ? 'View your request statuses, add message context, and follow updates without needing Dataverse access.'
-            : isLandlord
-              ? 'Track request load and tenant communication from one place. Escalate only when deeper record detail is required.'
-              : isAdmin
-                ? 'Review incoming demand, open maintenance queues, and coordinate PM handoff response.'
-                : 'Use tabs below to continue.'}
-        </Text>
+        <Text style={styles.cardTitle}>Workflow</Text>
+        <Text style={styles.cardBody}>{workflowText}</Text>
       </View>
 
       <View style={styles.card}>
         <View style={styles.cardHeaderRow}>
-          <Text style={styles.cardTitle}>Recent conversations</Text>
-          <Pressable onPress={openMaintenanceTab}>
-            <Text style={styles.linkLabel}>View requests</Text>
+          <Text style={styles.cardTitle}>Recent maintenance requests</Text>
+          <Pressable onPress={openMaintenanceList}>
+            <Text style={styles.linkLabel}>View all</Text>
           </Pressable>
         </View>
-        {activeConversations.length === 0 ? (
-          <Text style={styles.cardBody}>No active conversations right now.</Text>
+
+        {sortedRequests.length === 0 ? (
+          <Text style={styles.cardBody}>No requests found.</Text>
         ) : (
-          activeConversations.slice(0, 3).map((conversation) => (
-            <ConversationCard
-              key={conversation.id}
-              conversation={conversation}
-              onPress={() => openConversation(conversation.id)}
-            />
+          sortedRequests.slice(0, 4).map((request) => (
+            <Pressable
+              key={request.id}
+              style={styles.requestRow}
+              onPress={() => openMaintenanceDetail(request.id)}
+            >
+              <View style={styles.requestCopy}>
+                <Text style={styles.requestTitle}>{request.title}</Text>
+                <Text style={styles.requestMeta}>{request.status.replace('_', ' ')}</Text>
+              </View>
+              <Text style={styles.requestAction}>Open</Text>
+            </Pressable>
           ))
         )}
       </View>
@@ -169,16 +141,26 @@ export const RoleDashboardScreen = () => {
         {properties.length === 0 ? (
           <Text style={styles.cardBody}>No property data available yet.</Text>
         ) : (
-          properties.map((property) => (
-            <Pressable
-              key={property.id}
-              style={styles.propertyRow}
-              onPress={() => openProperty(property)}
-            >
-              <Text style={styles.propertyText}>{property.name}</Text>
-              <Text style={styles.propertyAction}>Open</Text>
-            </Pressable>
-          ))
+          properties.map((property) => {
+            const recent = sortedRequests.find((item) => item.propertyId === property.id);
+
+            return (
+              <Pressable
+                key={property.id}
+                style={styles.propertyRow}
+                onPress={() => {
+                  if (recent) {
+                    openMaintenanceDetail(recent.id);
+                    return;
+                  }
+                  openMaintenanceList();
+                }}
+              >
+                <Text style={styles.propertyText}>{property.name}</Text>
+                <Text style={styles.propertyAction}>Open</Text>
+              </Pressable>
+            );
+          })
         )}
       </View>
     </ScrollView>
@@ -238,25 +220,56 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     gap: 8,
   },
+  cardHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
   cardTitle: {
     color: colors.textPrimary,
     fontSize: typography.heading,
     fontWeight: '800',
   },
-  cardHeaderRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
+  cardBody: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    lineHeight: 20,
   },
   linkLabel: {
     color: '#2457A5',
     fontSize: typography.small,
     fontWeight: '700',
   },
-  cardBody: {
-    color: colors.textSecondary,
+  requestRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: '#FAFCFD',
+    paddingHorizontal: 10,
+    paddingVertical: 10,
+  },
+  requestCopy: {
+    flex: 1,
+    gap: 2,
+  },
+  requestTitle: {
+    color: colors.textPrimary,
     fontSize: typography.small,
-    lineHeight: 20,
+    fontWeight: '700',
+  },
+  requestMeta: {
+    color: colors.textSecondary,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  requestAction: {
+    color: '#2457A5',
+    fontSize: 12,
+    fontWeight: '700',
   },
   propertyRow: {
     flexDirection: 'row',

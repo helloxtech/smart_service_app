@@ -3,7 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { MainTabParamList } from './types';
 import { InboxStackNavigator } from './InboxStackNavigator';
-import { MaintenanceScreen } from '../screens/MaintenanceScreen';
+import { MaintenanceStackNavigator } from './MaintenanceStackNavigator';
 import { VisitsScreen } from '../screens/VisitsScreen';
 import { RoleProfileScreen } from '../screens/RoleProfileScreen';
 import { colors } from '../theme/theme';
@@ -64,7 +64,7 @@ export const MainTabNavigator = () => {
       />
       <Tab.Screen
         name="MaintenanceTab"
-        component={MaintenanceScreen}
+        component={MaintenanceStackNavigator}
         options={{
           title: isPmWorkflow ? 'Maintenance' : 'Requests',
         }}

@@ -11,6 +11,11 @@ export const mockPmUser: PmUser = {
   name: 'Alex Chen',
   email: 'alex.chen@rentalsmart.ca',
   role: 'PM',
+  phone: '+1 604-555-0123',
+  address: '1088 Georgia St W, Vancouver, BC',
+  bio: 'Primary manager for Downtown and Burnaby portfolio.',
+  emailNotifs: true,
+  smsNotifs: true,
 };
 
 export const mockConversations: Conversation[] = [

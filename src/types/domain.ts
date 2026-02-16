@@ -8,6 +8,11 @@ export interface PmUser {
   name: string;
   email: string;
   role: UserRole;
+  phone?: string;
+  address?: string;
+  bio?: string;
+  emailNotifs?: boolean;
+  smsNotifs?: boolean;
 }
 
 export interface PropertyInfo {

@@ -8,9 +8,11 @@ import {
   Pressable,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { EmptyState } from '../components/EmptyState';
 import { MaintenanceCard } from '../components/MaintenanceCard';
+import { MaintenanceStackParamList } from '../navigation/types';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import { MaintenanceStatus } from '../types/domain';
@@ -26,7 +28,7 @@ const filters: Array<{ label: string; value: MaintenanceStatus | 'all' }> = [
 export const MaintenanceScreen = () => {
   const { maintenanceRequests, updateMaintenanceStatus, conversations, currentUser } = useAppStore();
   const insets = useSafeAreaInsets();
-  const navigation = useNavigation<any>();
+  const navigation = useNavigation<NativeStackNavigationProp<MaintenanceStackParamList>>();
   const [activeFilter, setActiveFilter] = useState<MaintenanceStatus | 'all'>('all');
   const canEditStatus = currentUser?.role === 'PM' || currentUser?.role === 'Supervisor';
 
@@ -62,37 +64,8 @@ export const MaintenanceScreen = () => {
     return map;
   }, [conversations]);
 
-  const conversationByRequestId = useMemo(() => {
-    const map = new Map<string, string>();
-    maintenanceRequests.forEach((request) => {
-      if (request.conversationId) {
-        map.set(request.id, request.conversationId);
-        return;
-      }
-
-      const related = conversations.find(
-        (item) =>
-          item.property.id === request.propertyId
-          && item.unit.id === request.unitId,
-      );
-      if (related) {
-        map.set(request.id, related.id);
-      }
-    });
-    return map;
-  }, [conversations, maintenanceRequests]);
-
-  const openRequestDetails = (requestId: string, dataverseUrl: string) => {
-    const conversationId = conversationByRequestId.get(requestId);
-    if (conversationId) {
-      navigation.navigate('InboxTab', {
-        screen: 'ConversationDetail',
-        params: { conversationId },
-      });
-      return;
-    }
-
-    void openExternalUrl(dataverseUrl);
+  const openRequestDetails = (requestId: string) => {
+    navigation.navigate('MaintenanceDetail', { requestId });
   };
 
   return (
@@ -134,7 +107,7 @@ export const MaintenanceScreen = () => {
               item={item}
               propertyName={propertyById.get(item.propertyId)}
               unitLabel={unitById.get(item.unitId)}
-              onPress={() => openRequestDetails(item.id, item.dataverseUrl)}
+              onPress={() => openRequestDetails(item.id)}
               readOnly={!canEditStatus}
               showDataverseLink={canEditStatus}
               onOpenDataverse={

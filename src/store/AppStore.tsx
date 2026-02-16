@@ -40,7 +40,11 @@ interface AddVisitNoteInput {
 
 interface UpdateProfileInput {
   name: string;
-  email: string;
+  phone?: string;
+  address?: string;
+  bio?: string;
+  emailNotifs: boolean;
+  smsNotifs: boolean;
 }
 
 interface AppStoreValue {
@@ -273,18 +277,25 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       }
 
       const name = payload.name.trim();
-      const email = payload.email.trim().toLowerCase();
 
       if (!name) {
         throw new Error('Name is required.');
       }
 
-      if (!email || !email.includes('@')) {
-        throw new Error('A valid email is required.');
-      }
-
       // Mobile profile writes are currently local-only until a dedicated profile endpoint is added.
-      setCurrentUser((prev) => (prev ? { ...prev, name, email } : prev));
+      setCurrentUser((prev) =>
+        prev
+          ? {
+              ...prev,
+              name,
+              phone: payload.phone?.trim(),
+              address: payload.address?.trim(),
+              bio: payload.bio?.trim(),
+              emailNotifs: payload.emailNotifs,
+              smsNotifs: payload.smsNotifs,
+            }
+          : prev,
+      );
     },
     [currentUser],
   );
