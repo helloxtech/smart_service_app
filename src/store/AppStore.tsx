@@ -94,7 +94,19 @@ const sortConversations = (items: Conversation[]): Conversation[] => {
   );
 };
 
-const initialConversations = sortConversations(mockConversations);
+type MockScopedDataset = {
+  conversations: Conversation[];
+  messages: Message[];
+  maintenanceRequests: MaintenanceRequest[];
+  visitNotes: SiteVisitNote[];
+};
+
+const allMockConversations = sortConversations(mockConversations);
+const allMockMessages = [...mockMessages];
+const allMockMaintenanceRequests = [...mockMaintenanceRequests];
+const allMockVisitNotes = [...mockVisitNotes];
+
+const initialConversations = allMockConversations;
 const isPmRole = (role: PmUser['role'] | undefined): boolean =>
   role === 'PM' || role === 'Supervisor';
 
@@ -126,15 +138,154 @@ const formatDisplayName = (email: string): string => {
   );
 };
 
+const deriveStableIndex = (seed: string, max: number): number => {
+  if (max <= 0) return 0;
+  const normalized = seed.trim().toLowerCase();
+  if (!normalized) return 0;
+
+  let hash = 0;
+  for (let i = 0; i < normalized.length; i += 1) {
+    hash = (hash * 33 + normalized.charCodeAt(i)) % 1_000_000_007;
+  }
+  return Math.abs(hash) % max;
+};
+
+const uniqueSorted = (items: string[]): string[] =>
+  Array.from(new Set(items)).sort((a, b) => a.localeCompare(b));
+
+const scopePropertyIdsForLandlord = (email: string): string[] => {
+  const propertyIds = uniqueSorted(
+    allMockConversations.map((item) => item.property.id),
+  );
+  if (propertyIds.length <= 2) {
+    return propertyIds;
+  }
+
+  const start = deriveStableIndex(email, propertyIds.length);
+  return [
+    propertyIds[start],
+    propertyIds[(start + 1) % propertyIds.length],
+  ];
+};
+
+const scopeUnitIdForTenant = (email: string): string | null => {
+  const unitIds = uniqueSorted(allMockConversations.map((item) => item.unit.id));
+  if (unitIds.length === 0) {
+    return null;
+  }
+  const idx = deriveStableIndex(email, unitIds.length);
+  return unitIds[idx] ?? null;
+};
+
+const buildScopedMockData = (email: string, role: PmUser['role']): MockScopedDataset => {
+  if (isPmRole(role)) {
+    return {
+      conversations: allMockConversations,
+      messages: allMockMessages,
+      maintenanceRequests: allMockMaintenanceRequests,
+      visitNotes: allMockVisitNotes,
+    };
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  const propertyScope =
+    role === 'Landlord'
+      ? new Set(scopePropertyIdsForLandlord(normalizedEmail))
+      : null;
+  const unitScope =
+    role === 'Tenant'
+      ? scopeUnitIdForTenant(normalizedEmail)
+      : null;
+
+  const scopedConversations = allMockConversations.filter((item) => {
+    if (propertyScope) {
+      return propertyScope.has(item.property.id);
+    }
+    if (unitScope) {
+      return item.unit.id === unitScope;
+    }
+    return false;
+  });
+
+  const scopedConversationIds = new Set(scopedConversations.map((item) => item.id));
+  const scopedMaintenanceRequests = allMockMaintenanceRequests.filter((item) => {
+    if (propertyScope) {
+      return propertyScope.has(item.propertyId);
+    }
+    if (unitScope) {
+      return item.unitId === unitScope;
+    }
+    return false;
+  });
+  const scopedMaintenanceIds = new Set(scopedMaintenanceRequests.map((item) => item.id));
+
+  const scopedMessages = allMockMessages.filter((item) =>
+    scopedConversationIds.has(item.conversationId),
+  );
+  const scopedVisitNotes = allMockVisitNotes.filter((item) =>
+    scopedMaintenanceIds.has(item.maintenanceRequestId ?? '')
+    || (unitScope ? item.unitId === unitScope : false),
+  );
+
+  return {
+    conversations: sortConversations(scopedConversations),
+    messages: scopedMessages,
+    maintenanceRequests: scopedMaintenanceRequests,
+    visitNotes: scopedVisitNotes,
+  };
+};
+
+const buildMockProfile = (
+  email: string,
+  role: PmUser['role'],
+  displayName: string,
+  scopedData: MockScopedDataset,
+): PmUser => {
+  const firstConversation = scopedData.conversations[0];
+  const defaultAddress = firstConversation?.property.address;
+
+  if (role === 'Tenant') {
+    const unitLabel = firstConversation?.unit.label ?? 'your unit';
+    return {
+      ...mockPmUser,
+      name: displayName,
+      email,
+      role,
+      address: defaultAddress,
+      bio: `Tenant workspace for ${unitLabel}.`,
+      smsNotifs: false,
+    };
+  }
+
+  if (role === 'Landlord') {
+    return {
+      ...mockPmUser,
+      name: displayName,
+      email,
+      role,
+      address: defaultAddress,
+      bio: `Owner workspace for ${scopedData.conversations.length} active property chats.`,
+      smsNotifs: false,
+    };
+  }
+
+  return {
+    ...mockPmUser,
+    name: displayName,
+    email,
+    role,
+  };
+};
+
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations);
-  const [messages, setMessages] = useState<Message[]>(mockMessages);
+  const [messages, setMessages] = useState<Message[]>(allMockMessages);
   const [maintenanceRequests, setMaintenanceRequests] = useState<
     MaintenanceRequest[]
-  >(mockMaintenanceRequests);
-  const [visitNotes, setVisitNotes] = useState<SiteVisitNote[]>(mockVisitNotes);
+  >(allMockMaintenanceRequests);
+  const [visitNotes, setVisitNotes] = useState<SiteVisitNote[]>(allMockVisitNotes);
 
   const isRemoteMode = !runtimeConfig.useMockData;
 
@@ -213,18 +364,14 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     if (runtimeConfig.useMockData) {
       const role = detectRoleFromEmail(email);
       const displayName = formatDisplayName(email);
+      const scoped = buildScopedMockData(email, role);
 
       setApiAuthToken(null);
-      setCurrentUser({
-        ...mockPmUser,
-        name: displayName,
-        email,
-        role,
-      });
-      setConversations(initialConversations);
-      setMessages(mockMessages);
-      setMaintenanceRequests(mockMaintenanceRequests);
-      setVisitNotes(mockVisitNotes);
+      setCurrentUser(buildMockProfile(email, role, displayName, scoped));
+      setConversations(scoped.conversations);
+      setMessages(scoped.messages);
+      setMaintenanceRequests(scoped.maintenanceRequests);
+      setVisitNotes(scoped.visitNotes);
       return;
     }
 
@@ -245,18 +392,14 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     if (runtimeConfig.useMockData) {
       const fallbackEmail = normalizedEmailHint || 'pm@rentalsmart.ca';
       const displayName = formatDisplayName(fallbackEmail);
+      const scoped = buildScopedMockData(fallbackEmail, 'PM');
 
       setApiAuthToken(null);
-      setCurrentUser({
-        ...mockPmUser,
-        name: displayName,
-        email: fallbackEmail,
-        role: 'PM',
-      });
-      setConversations(initialConversations);
-      setMessages(mockMessages);
-      setMaintenanceRequests(mockMaintenanceRequests);
-      setVisitNotes(mockVisitNotes);
+      setCurrentUser(buildMockProfile(fallbackEmail, 'PM', displayName, scoped));
+      setConversations(scoped.conversations);
+      setMessages(scoped.messages);
+      setMaintenanceRequests(scoped.maintenanceRequests);
+      setVisitNotes(scoped.visitNotes);
       return;
     }
 
@@ -278,9 +421,9 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setApiAuthToken(null);
     setCurrentUser(null);
     setConversations(initialConversations);
-    setMessages(mockMessages);
-    setMaintenanceRequests(mockMaintenanceRequests);
-    setVisitNotes(mockVisitNotes);
+    setMessages(allMockMessages);
+    setMaintenanceRequests(allMockMaintenanceRequests);
+    setVisitNotes(allMockVisitNotes);
   }, []);
 
   const updateProfile = useCallback(

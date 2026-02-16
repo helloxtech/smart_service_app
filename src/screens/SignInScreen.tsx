@@ -17,6 +17,10 @@ import { colors, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const internalDomains = (process.env.EXPO_PUBLIC_INTERNAL_EMAIL_DOMAINS ?? 'rentalsmart.ca')
+  .split(',')
+  .map((item: string) => item.trim().toLowerCase())
+  .filter(Boolean);
 
 const openExternalUrl = async (url: string) => {
   const canOpen = await Linking.canOpenURL(url);
@@ -54,7 +58,7 @@ export const SignInScreen = () => {
       return null;
     }
 
-    return 'Your role will be identified from Contact Portal Roles after sign-in.';
+    return 'Your access is applied automatically after sign in.';
   }, [emailValid]);
 
   const onSubmit = async () => {
@@ -80,6 +84,18 @@ export const SignInScreen = () => {
 
     if (!emailValid) {
       Alert.alert('Microsoft sign-in', 'Enter your internal work email to continue.');
+      return;
+    }
+
+    const domain = trimmedEmail.split('@')[1]?.toLowerCase() ?? '';
+    const isInternal = internalDomains.some((allowed: string) =>
+      domain === allowed || domain.endsWith(`.${allowed}`),
+    );
+    if (!isInternal) {
+      Alert.alert(
+        'Internal account required',
+        `Microsoft sign-in is only for internal PM accounts (${internalDomains.join(', ')}).`,
+      );
       return;
     }
 
