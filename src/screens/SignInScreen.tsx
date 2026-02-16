@@ -3,7 +3,7 @@ import {
   Alert,
   KeyboardAvoidingView,
   Platform,
-  Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -12,21 +12,17 @@ import {
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
-import { UserRole } from '../types/domain';
-
-const roleOptions: UserRole[] = ['PM', 'Supervisor', 'Tenant', 'Landlord'];
 
 export const SignInScreen = () => {
   const { signIn } = useAppStore();
   const [email, setEmail] = useState('alex.chen@rentalsmart.ca');
   const [password, setPassword] = useState('');
-  const [selectedRole, setSelectedRole] = useState<UserRole>('PM');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const onSubmit = async () => {
     try {
       setIsSubmitting(true);
-      await signIn(email, password, selectedRole);
+      await signIn(email, password);
     } catch (error) {
       Alert.alert('Sign-in failed', (error as Error).message);
     } finally {
@@ -39,71 +35,58 @@ export const SignInScreen = () => {
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
-      <View style={styles.card}>
-        <Text style={styles.badge}>SMART SERVICE</Text>
-        <Text style={styles.heading}>Property Manager Workspace</Text>
-        <Text style={styles.copy}>
-          Role-based workspace for PM, Supervisor, Tenant, and Landlord.
-        </Text>
-
-        <View style={styles.roleWrap}>
-          <Text style={styles.fieldLabel}>Sign in as</Text>
-          <View style={styles.roleGrid}>
-            {roleOptions.map((role) => {
-              const selected = selectedRole === role;
-              return (
-                <Pressable
-                  key={role}
-                  onPress={() => setSelectedRole(role)}
-                  style={[styles.roleChip, selected && styles.roleChipActive]}
-                >
-                  <Text style={[styles.roleChipText, selected && styles.roleChipTextActive]}>
-                    {role}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </View>
-
-        <View style={styles.form}>
-          <View style={styles.fieldWrap}>
-            <Text style={styles.fieldLabel}>Work email</Text>
-            <TextInput
-              style={styles.input}
-              autoCapitalize="none"
-              keyboardType="email-address"
-              placeholder="name@company.com"
-              placeholderTextColor="#8D9AA5"
-              value={email}
-              onChangeText={setEmail}
-            />
-          </View>
-
-          <View style={styles.fieldWrap}>
-            <Text style={styles.fieldLabel}>Password</Text>
-            <TextInput
-              style={styles.input}
-              secureTextEntry
-              placeholder="Enter your password"
-              placeholderTextColor="#8D9AA5"
-              value={password}
-              onChangeText={setPassword}
-            />
-          </View>
-
-          <PrimaryButton
-            label={isSubmitting ? 'Signing in...' : 'Sign in'}
-            onPress={onSubmit}
-            disabled={isSubmitting || !email || !password}
-          />
-
-          <Text style={styles.helper}>
-            Production remote mode currently supports PM/Supervisor endpoints. Tenant/Landlord
-            is enabled in mock mode.
+      <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled">
+        <View style={styles.card}>
+          <Text style={styles.badge}>SMART SERVICE</Text>
+          <Text style={styles.heading}>Welcome Back</Text>
+          <Text style={styles.copy}>
+            Role-based workspace for Property Managers, Supervisors, Landlords, and Tenants.
+            Your access is automatically identified from your contact profile.
           </Text>
+
+          <View style={styles.infoStrip}>
+            <Text style={styles.infoLabel}>Portal role detection</Text>
+            <Text style={styles.infoValue}>Automatic</Text>
+          </View>
+
+          <View style={styles.form}>
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Email</Text>
+              <TextInput
+                style={styles.input}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="name@example.com"
+                placeholderTextColor="#8D9AA5"
+                value={email}
+                onChangeText={setEmail}
+              />
+            </View>
+
+            <View style={styles.fieldWrap}>
+              <Text style={styles.fieldLabel}>Password</Text>
+              <TextInput
+                style={styles.input}
+                secureTextEntry
+                placeholder="Enter your password"
+                placeholderTextColor="#8D9AA5"
+                value={password}
+                onChangeText={setPassword}
+              />
+            </View>
+
+            <PrimaryButton
+              label={isSubmitting ? 'Signing in...' : 'Sign in'}
+              onPress={onSubmit}
+              disabled={isSubmitting || !email || !password}
+            />
+
+            <Text style={styles.helper}>
+              Use the same credentials as your portal account.
+            </Text>
+          </View>
         </View>
-      </View>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 };
@@ -112,8 +95,11 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
-    padding: spacing.lg,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: 'center',
+    padding: spacing.lg,
   },
   card: {
     backgroundColor: colors.surface,
@@ -143,39 +129,33 @@ const styles = StyleSheet.create({
   copy: {
     color: colors.textSecondary,
     fontSize: typography.body,
-    lineHeight: 24,
+    lineHeight: 22,
   },
-  form: {
-    gap: spacing.md,
-    marginTop: spacing.sm,
-  },
-  roleWrap: {
-    gap: 8,
-  },
-  roleGrid: {
+  infoStrip: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  roleChip: {
-    borderWidth: 1,
-    borderColor: colors.inputBorder,
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: '#F5FAF8',
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: '#D5EBE2',
+    paddingVertical: 10,
     paddingHorizontal: 12,
-    paddingVertical: 8,
-    backgroundColor: '#FAFCFD',
   },
-  roleChipActive: {
-    borderColor: colors.accent,
-    backgroundColor: colors.accentMuted,
-  },
-  roleChipText: {
+  infoLabel: {
     color: colors.textSecondary,
     fontSize: 12,
     fontWeight: '700',
   },
-  roleChipTextActive: {
+  infoValue: {
     color: colors.accent,
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  form: {
+    gap: spacing.md,
+    marginTop: spacing.sm,
   },
   fieldWrap: {
     gap: 6,

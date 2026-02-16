@@ -13,7 +13,6 @@ import {
   Message,
   PmUser,
   SiteVisitNote,
-  UserRole,
 } from '../types/domain';
 import {
   mockConversations,
@@ -46,7 +45,7 @@ interface AppStoreValue {
   maintenanceRequests: MaintenanceRequest[];
   visitNotes: SiteVisitNote[];
   isRemoteMode: boolean;
-  signIn: (email: string, password: string, role: UserRole) => Promise<void>;
+  signIn: (email: string, password: string) => Promise<void>;
   signOut: () => void;
   markConversationRead: (conversationId: string) => void;
   assignConversation: (conversationId: string) => Promise<void>;
@@ -73,14 +72,35 @@ const sortConversations = (items: Conversation[]): Conversation[] => {
 };
 
 const initialConversations = sortConversations(mockConversations);
-const isPmRole = (role: UserRole | undefined): boolean =>
+const isPmRole = (role: PmUser['role'] | undefined): boolean =>
   role === 'PM' || role === 'Supervisor';
 
-const defaultNameByRole: Record<UserRole, string> = {
-  PM: 'Alex Chen',
-  Supervisor: 'Jordan Lee',
-  Tenant: 'Taylor Wong',
-  Landlord: 'Morgan Patel',
+const detectRoleFromEmail = (email: string): PmUser['role'] => {
+  const normalized = email.toLowerCase();
+  if (normalized.includes('supervisor') || normalized.includes('admin')) {
+    return 'Supervisor';
+  }
+  if (normalized.includes('tenant')) {
+    return 'Tenant';
+  }
+  if (normalized.includes('landlord') || normalized.includes('owner')) {
+    return 'Landlord';
+  }
+  return 'PM';
+};
+
+const formatDisplayName = (email: string): string => {
+  const localPart = email.split('@')[0]?.trim();
+  if (!localPart) {
+    return 'Portal User';
+  }
+  return (
+    localPart
+      .split(/[._-]/g)
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ') || 'Portal User'
+  );
 };
 
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
@@ -161,26 +181,19 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     [currentUser?.name],
   );
 
-  const signIn = useCallback(async (email: string, password: string, role: UserRole) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     if (!email.toLowerCase().includes('@')) {
-      throw new Error('Please enter a valid work email.');
+      throw new Error('Please enter a valid email.');
     }
 
     if (runtimeConfig.useMockData) {
-      const localPart = email.split('@')[0]?.trim();
-      const fallbackName = defaultNameByRole[role];
-      const displayName = localPart
-        ? localPart
-            .split(/[._-]/g)
-            .filter(Boolean)
-            .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-            .join(' ')
-        : fallbackName;
+      const role = detectRoleFromEmail(email);
+      const displayName = formatDisplayName(email);
 
       setApiAuthToken(null);
       setCurrentUser({
         ...mockPmUser,
-        name: displayName || fallbackName,
+        name: displayName,
         email,
         role,
       });
@@ -189,12 +202,6 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       setMaintenanceRequests(mockMaintenanceRequests);
       setVisitNotes(mockVisitNotes);
       return;
-    }
-
-    if (!isPmRole(role)) {
-      throw new Error(
-        'Tenant/Landlord remote sign-in is not enabled yet. Use mock mode or enable tenant/landlord APIs in BFF.',
-      );
     }
 
     const session = await remoteApi.signIn(email, password);
