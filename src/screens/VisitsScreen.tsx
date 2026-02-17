@@ -26,11 +26,44 @@ interface UnitOption {
   label: string;
 }
 
-const getNotePhotoUris = (photoUris?: string[], fallbackPhotoUri?: string): string[] => {
+interface SelectedMedia {
+  uri: string;
+  kind: 'image' | 'video';
+  durationMs?: number;
+  fileSizeBytes?: number;
+}
+
+const MAX_MEDIA_ATTACHMENTS = 8;
+const MAX_VIDEO_DURATION_MS = 30_000;
+const MAX_VIDEO_SIZE_BYTES = 25 * 1024 * 1024;
+
+const VIDEO_FILE_EXTENSIONS = ['.mp4', '.mov', '.m4v', '.webm', '.avi', '.mkv'];
+
+const getNoteMediaUris = (photoUris?: string[], fallbackPhotoUri?: string): string[] => {
   const values = [...(photoUris ?? []), fallbackPhotoUri ?? '']
     .map((item) => item.trim())
     .filter(Boolean);
   return Array.from(new Set(values));
+};
+
+const looksLikeVideoUri = (uri: string): boolean => {
+  const normalized = uri.trim().toLowerCase().split('?')[0] ?? '';
+  if (!normalized) {
+    return false;
+  }
+
+  return VIDEO_FILE_EXTENSIONS.some((extension) => normalized.endsWith(extension));
+};
+
+const formatVideoDuration = (durationMs?: number): string => {
+  if (!durationMs || durationMs <= 0) {
+    return 'Video';
+  }
+
+  const totalSeconds = Math.round(durationMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
 };
 
 export const VisitsScreen = () => {
@@ -59,7 +92,8 @@ export const VisitsScreen = () => {
   const [selectedMaintenanceId, setSelectedMaintenanceId] = useState<string | undefined>();
   const [unitSearch, setUnitSearch] = useState('');
   const [note, setNote] = useState('');
-  const [photoUris, setPhotoUris] = useState<string[]>([]);
+  const [selectedMedia, setSelectedMedia] = useState<SelectedMedia[]>([]);
+  const [knownMediaKinds, setKnownMediaKinds] = useState<Record<string, 'image' | 'video'>>({});
   const [selectedRecentNoteId, setSelectedRecentNoteId] = useState<string | undefined>();
   const [recentUnitKeys, setRecentUnitKeys] = useState<string[]>([]);
   const [savedMaintenanceRequestId, setSavedMaintenanceRequestId] = useState<string | undefined>();
@@ -202,27 +236,109 @@ export const VisitsScreen = () => {
     return unitOptions.filter((option) => option.label.toLowerCase().includes(query)).length;
   }, [unitOptions, unitSearch]);
 
-  const pickPhotoFromLibrary = async () => {
+  const upsertSelectedMedia = (incoming: SelectedMedia[]) => {
+    setKnownMediaKinds((prev) => {
+      const next = { ...prev };
+      incoming.forEach((item) => {
+        next[item.uri] = item.kind;
+      });
+      return next;
+    });
+
+    setSelectedMedia((prev) => {
+      const byUri = new Map<string, SelectedMedia>();
+      prev.forEach((item) => byUri.set(item.uri, item));
+      incoming.forEach((item) => byUri.set(item.uri, item));
+      return Array.from(byUri.values()).slice(0, MAX_MEDIA_ATTACHMENTS);
+    });
+  };
+
+  const normalizePickedMedia = (
+    assets: ImagePicker.ImagePickerAsset[],
+  ): { accepted: SelectedMedia[]; rejectedMessages: string[] } => {
+    const accepted: SelectedMedia[] = [];
+    const rejectedMessages: string[] = [];
+
+    assets.forEach((asset) => {
+      const kind = asset.type === 'video' ? 'video' : 'image';
+
+      if (kind === 'video') {
+        if ((asset.duration ?? 0) > MAX_VIDEO_DURATION_MS) {
+          rejectedMessages.push(
+            `${asset.fileName ?? 'Video'} exceeds 30 seconds and was skipped.`,
+          );
+          return;
+        }
+
+        if ((asset.fileSize ?? 0) > MAX_VIDEO_SIZE_BYTES) {
+          rejectedMessages.push(
+            `${asset.fileName ?? 'Video'} is larger than 25MB and was skipped.`,
+          );
+          return;
+        }
+      }
+
+      if (!asset.uri?.trim()) {
+        return;
+      }
+
+      accepted.push({
+        uri: asset.uri.trim(),
+        kind,
+        durationMs: asset.duration ?? undefined,
+        fileSizeBytes: asset.fileSize ?? undefined,
+      });
+    });
+
+    return { accepted, rejectedMessages };
+  };
+
+  const showRejectedMediaAlert = (messages: string[]) => {
+    if (messages.length === 0) {
+      return;
+    }
+    Alert.alert('Some media skipped', messages.slice(0, 3).join('\n'));
+  };
+
+  const addMediaFromAssets = (assets: ImagePicker.ImagePickerAsset[]) => {
+    const remaining = MAX_MEDIA_ATTACHMENTS - selectedMedia.length;
+    if (remaining <= 0) {
+      Alert.alert('Attachment limit reached', `You can attach up to ${MAX_MEDIA_ATTACHMENTS} items.`);
+      return;
+    }
+
+    const { accepted, rejectedMessages } = normalizePickedMedia(assets);
+    const acceptedLimited = accepted.slice(0, remaining);
+    upsertSelectedMedia(acceptedLimited);
+
+    if (accepted.length > acceptedLimited.length) {
+      rejectedMessages.push(`Only ${MAX_MEDIA_ATTACHMENTS} total media attachments are allowed.`);
+    }
+    showRejectedMediaAlert(rejectedMessages);
+  };
+
+  const pickMediaFromLibrary = async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permission.granted) {
-      Alert.alert('Permission needed', 'Please enable photo library access.');
+      Alert.alert('Permission needed', 'Please enable media library access.');
+      return;
+    }
+
+    const remaining = MAX_MEDIA_ATTACHMENTS - selectedMedia.length;
+    if (remaining <= 0) {
+      Alert.alert('Attachment limit reached', `You can attach up to ${MAX_MEDIA_ATTACHMENTS} items.`);
       return;
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: true,
-      selectionLimit: 8,
+      selectionLimit: remaining,
       quality: 0.8,
     });
 
     if (!result.canceled && result.assets.length > 0) {
-      setPhotoUris((prev) => {
-        const next = [...prev, ...result.assets.map((asset) => asset.uri)]
-          .map((item) => item.trim())
-          .filter(Boolean);
-        return Array.from(new Set(next)).slice(0, 8);
-      });
+      addMediaFromAssets(result.assets);
     }
   };
 
@@ -240,31 +356,55 @@ export const VisitsScreen = () => {
       });
 
       if (!result.canceled && result.assets.length > 0) {
-        setPhotoUris((prev) => {
-          const next = [...prev, result.assets[0].uri]
-            .map((item) => item.trim())
-            .filter(Boolean);
-          return Array.from(new Set(next)).slice(0, 8);
-        });
+        addMediaFromAssets(result.assets);
       }
     } catch {
       Alert.alert(
         'Camera unavailable',
-        'Camera capture is not available in this simulator. Use a physical device or photo library.',
+        'Camera capture is not available in this simulator. Use a physical device or media library.',
       );
     }
   };
 
-  const choosePhoto = () => {
-    Alert.alert('Attach photos', 'Choose photo source', [
+  const captureVideo = async () => {
+    const permission = await ImagePicker.requestCameraPermissionsAsync();
+    if (!permission.granted) {
+      Alert.alert('Permission needed', 'Please enable camera access.');
+      return;
+    }
+
+    try {
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ['videos'],
+        videoMaxDuration: Math.floor(MAX_VIDEO_DURATION_MS / 1000),
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        addMediaFromAssets(result.assets);
+      }
+    } catch {
+      Alert.alert(
+        'Camera unavailable',
+        'Video capture is not available in this simulator. Use a physical device or media library.',
+      );
+    }
+  };
+
+  const chooseMedia = () => {
+    Alert.alert('Add media', 'Attach photo or short video (max 30s / 25MB each).', [
       { text: 'Take photo', onPress: () => void capturePhoto() },
-      { text: 'Photo library', onPress: () => void pickPhotoFromLibrary() },
-      ...(photoUris.length > 0
-        ? [{ text: 'Clear all photos', style: 'destructive' as const, onPress: () => setPhotoUris([]) }]
+      { text: 'Record video', onPress: () => void captureVideo() },
+      { text: 'Media library', onPress: () => void pickMediaFromLibrary() },
+      ...(selectedMedia.length > 0
+        ? [{ text: 'Clear all media', style: 'destructive' as const, onPress: () => setSelectedMedia([]) }]
         : []),
       { text: 'Cancel', style: 'cancel' },
     ]);
   };
+
+  const isVideoAttachment = (uri: string): boolean =>
+    knownMediaKinds[uri] === 'video' || looksLikeVideoUri(uri);
 
   const rememberRecentUnit = (unitKey: string) => {
     setRecentUnitKeys((prev) => [unitKey, ...prev.filter((item) => item !== unitKey)].slice(0, 5));
@@ -292,11 +432,11 @@ export const VisitsScreen = () => {
         unitId: selectedUnit.unitId,
         maintenanceRequestId: selectedMaintenanceId,
         note,
-        photoUris,
+        photoUris: selectedMedia.map((item) => item.uri),
       });
 
       setNote('');
-      setPhotoUris([]);
+      setSelectedMedia([]);
       setSelectedMaintenanceId(undefined);
       rememberRecentUnit(`${selectedUnit.propertyId}-${selectedUnit.unitId}`);
       if (saved.maintenanceRequestId) {
@@ -327,7 +467,7 @@ export const VisitsScreen = () => {
       contentContainerStyle={[styles.content, { paddingTop: insets.top + spacing.sm }]}
     >
       <Text style={styles.title}>Site Visits</Text>
-      <Text style={styles.subtitle}>Capture onsite findings with photos and notes.</Text>
+      <Text style={styles.subtitle}>Capture onsite findings with media and notes.</Text>
 
       <View style={styles.card}>
         <Text style={styles.sectionTitle}>New site note</Text>
@@ -484,22 +624,31 @@ export const VisitsScreen = () => {
           placeholderTextColor="#8D9AA5"
         />
 
-        <Pressable style={styles.photoButton} onPress={choosePhoto}>
+        <Pressable style={styles.photoButton} onPress={chooseMedia}>
           <Ionicons name="camera-outline" size={18} color={colors.textPrimary} />
           <Text style={styles.photoButtonLabel}>
-            {photoUris.length > 0 ? `Add more photos (${photoUris.length})` : 'Attach photos'}
+            {selectedMedia.length > 0 ? `Add media (${selectedMedia.length})` : 'Attach media'}
           </Text>
         </Pressable>
 
-        {photoUris.length > 0 && (
+        <Text style={styles.mediaLimitHint}>Short videos only: up to 30s and 25MB each.</Text>
+
+        {selectedMedia.length > 0 && (
           <View style={styles.previewGrid}>
-            {photoUris.map((uri) => (
-              <View key={uri} style={styles.previewTileWrap}>
-                <Image source={{ uri }} style={styles.previewTile} />
+            {selectedMedia.map((item) => (
+              <View key={item.uri} style={styles.previewTileWrap}>
+                {item.kind === 'video' ? (
+                  <View style={[styles.previewTile, styles.previewVideoTile]}>
+                    <Ionicons name="videocam-outline" size={20} color={colors.accent} />
+                    <Text style={styles.previewVideoText}>{formatVideoDuration(item.durationMs)}</Text>
+                  </View>
+                ) : (
+                  <Image source={{ uri: item.uri }} style={styles.previewTile} />
+                )}
                 <Pressable
                   style={styles.previewRemove}
                   onPress={() =>
-                    setPhotoUris((prev) => prev.filter((item) => item !== uri))
+                    setSelectedMedia((prev) => prev.filter((current) => current.uri !== item.uri))
                   }
                 >
                   <Ionicons name="close" size={12} color="#FFFFFF" />
@@ -537,11 +686,18 @@ export const VisitsScreen = () => {
                   Related request: {maintenanceTitleById.get(item.maintenanceRequestId) ?? item.maintenanceRequestId}
                 </Text>
               )}
-              {getNotePhotoUris(item.photoUris, item.photoUri).length > 0 && (
+              {getNoteMediaUris(item.photoUris, item.photoUri).length > 0 && (
                 <View style={styles.notePhotoRow}>
-                  {getNotePhotoUris(item.photoUris, item.photoUri).map((uri) => (
-                    <Image key={uri} source={{ uri }} style={styles.notePhotoThumb} />
-                  ))}
+                  {getNoteMediaUris(item.photoUris, item.photoUri).map((uri) =>
+                    isVideoAttachment(uri) ? (
+                      <View key={uri} style={[styles.notePhotoThumb, styles.noteVideoThumb]}>
+                        <Ionicons name="videocam-outline" size={16} color={colors.accent} />
+                        <Text style={styles.noteVideoLabel}>Video</Text>
+                      </View>
+                    ) : (
+                      <Image key={uri} source={{ uri }} style={styles.notePhotoThumb} />
+                    ),
+                  )}
                 </View>
               )}
               <Text style={styles.openNoteHint}>Tap to open</Text>
@@ -571,17 +727,24 @@ export const VisitsScreen = () => {
                   </Text>
                 )}
                 <Text style={styles.modalBody}>{selectedRecentNote.note}</Text>
-                {getNotePhotoUris(
+                {getNoteMediaUris(
                   selectedRecentNote.photoUris,
                   selectedRecentNote.photoUri,
                 ).length > 0 && (
                   <View style={styles.modalImageWrap}>
-                    {getNotePhotoUris(
+                    {getNoteMediaUris(
                       selectedRecentNote.photoUris,
                       selectedRecentNote.photoUri,
-                    ).map((uri) => (
-                      <Image key={uri} source={{ uri }} style={styles.modalImage} />
-                    ))}
+                    ).map((uri) =>
+                      isVideoAttachment(uri) ? (
+                        <View key={uri} style={[styles.modalImage, styles.modalVideoCard]}>
+                          <Ionicons name="videocam-outline" size={20} color={colors.accent} />
+                          <Text style={styles.modalVideoLabel}>Video attached</Text>
+                        </View>
+                      ) : (
+                        <Image key={uri} source={{ uri }} style={styles.modalImage} />
+                      ),
+                    )}
                   </View>
                 )}
 
@@ -848,6 +1011,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: typography.small,
   },
+  mediaLimitHint: {
+    color: colors.textSecondary,
+    fontSize: 11,
+    marginTop: -2,
+  },
   previewGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -863,6 +1031,17 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: '#E8EEF1',
+  },
+  previewVideoTile: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#ECF6F1',
+  },
+  previewVideoText: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '700',
   },
   previewRemove: {
     position: 'absolute',
@@ -902,6 +1081,19 @@ const styles = StyleSheet.create({
     width: 86,
     height: 86,
     borderRadius: radius.sm,
+  },
+  noteVideoThumb: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    backgroundColor: '#ECF6F1',
+    borderWidth: 1,
+    borderColor: '#CBE6D8',
+  },
+  noteVideoLabel: {
+    color: colors.accent,
+    fontSize: 11,
+    fontWeight: '700',
   },
   notePhotoRow: {
     flexDirection: 'row',
@@ -956,5 +1148,18 @@ const styles = StyleSheet.create({
     width: 132,
     height: 132,
     borderRadius: radius.md,
+  },
+  modalVideoCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    backgroundColor: '#ECF6F1',
+    borderWidth: 1,
+    borderColor: '#CBE6D8',
+  },
+  modalVideoLabel: {
+    color: colors.accent,
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
