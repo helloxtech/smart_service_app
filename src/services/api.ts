@@ -1,6 +1,8 @@
 import { NativeModules } from 'react-native';
 
 const LOCAL_HOSTS = new Set(['127.0.0.1', 'localhost', '0.0.0.0']);
+const DEFAULT_PUBLIC_BFF_BASE_URL =
+  'https://rental-smart-bff-bga2cjeqazb7e8f9.canadacentral-01.azurewebsites.net/api';
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/$/, '');
 
@@ -28,7 +30,7 @@ const resolveApiBaseUrl = (): string | null =>
   const configured = process.env.EXPO_PUBLIC_BFF_BASE_URL?.trim();
   if (!configured)
   {
-    return null;
+    return __DEV__ ? null : trimTrailingSlash(DEFAULT_PUBLIC_BFF_BASE_URL);
   }
 
   try
@@ -41,7 +43,7 @@ const resolveApiBaseUrl = (): string | null =>
 
     if (!__DEV__)
     {
-      return null;
+      return trimTrailingSlash(DEFAULT_PUBLIC_BFF_BASE_URL);
     }
 
     const devHost = resolveDevHostFromBundle();
