@@ -51,10 +51,7 @@ const resolveRedirectUri = (): string =>
   }
 
   const scheme = trimOrUndefined(process.env.EXPO_PUBLIC_ENTRA_REDIRECT_SCHEME) ?? DEFAULT_SCHEME;
-  return AuthSession.makeRedirectUri({
-    scheme,
-    path: 'auth',
-  });
+  return `${scheme}://auth`;
 };
 
 const normalizeLoginHint = (value?: string): string | undefined =>
