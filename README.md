@@ -82,14 +82,16 @@ npm run typecheck
 Create `.env` (or set in EAS/local shell):
 
 ```bash
-EXPO_PUBLIC_USE_MOCK=true
-EXPO_PUBLIC_BFF_BASE_URL=https://your-bff.example.com
-EXPO_PUBLIC_CHAT_WS_URL=wss://your-chat-worker.example.com
+EXPO_PUBLIC_USE_MOCK=false
+EXPO_PUBLIC_BFF_BASE_URL=http://127.0.0.1:7071/api
+EXPO_PUBLIC_CHAT_WS_URL=
+EXPO_PUBLIC_INTERNAL_EMAIL_DOMAINS=rentalsmart.ca
 ```
 
-- `EXPO_PUBLIC_USE_MOCK=true` keeps local mock mode for development/demo.
-- Set `EXPO_PUBLIC_USE_MOCK=false` to use remote BFF + chat backend.
-- Remote BFF endpoints currently support PM/Supervisor flows; Tenant/Landlord role is available in mock mode until tenant/landlord APIs are enabled.
+- `EXPO_PUBLIC_USE_MOCK=false` connects Smart Service to your BFF (real Dataverse-backed PM data).
+- Use `EXPO_PUBLIC_BFF_BASE_URL=http://127.0.0.1:7071/api` for iOS Simulator on the same Mac.
+- For physical devices, replace `127.0.0.1` with your Mac LAN IP (for example `http://192.168.1.243:7071/api`).
+- Set `EXPO_PUBLIC_USE_MOCK=true` only when you intentionally want local demo mode.
 
 ## Integration Notes (Production)
 
