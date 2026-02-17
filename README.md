@@ -49,6 +49,9 @@ npm run ios
 npm run android
 ```
 
+`npm run ios` now builds/runs **Release** configuration (no Metro required).
+Use `npm run ios:debug` only when you intentionally want Debug + Metro.
+
 For iOS Simulator on the same Mac, prefer localhost mode:
 
 ```bash
