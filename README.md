@@ -71,6 +71,8 @@ npm run start:lan
 npm run start:tunnel
 ```
 
+For production-like iPhone testing (same behavior target as App Store builds), use Xcode `Release` build on device or EAS/TestFlight, and point to the public BFF URL.
+
 If Expo Go hangs on `Opening project...`, stop stale Metro processes first, then restart with the correct host mode:
 
 ```bash
@@ -102,8 +104,23 @@ EXPO_PUBLIC_ENTRA_REDIRECT_SCHEME=ca.rentalsmart.smartservice
 - Use `EXPO_PUBLIC_BFF_BASE_URL=http://127.0.0.1:7071/api` for iOS Simulator on the same Mac.
 - For physical devices, replace `127.0.0.1` with your Mac LAN IP (for example `http://192.168.1.243:7071/api`).
 - If BFF URL is still localhost, Smart Service now auto-resolves to your Metro host IP in debug device runs.
+- Release builds automatically fall back to `https://rental-smart-bff-bga2cjeqazb7e8f9.canadacentral-01.azurewebsites.net/api` when localhost is not valid.
 - `EXPO_PUBLIC_ENTRA_TENANT_ID` and `EXPO_PUBLIC_ENTRA_CLIENT_ID` must match the Entra app registration used for mobile Microsoft login.
 - Redirect URI in Entra app registration should use the same custom scheme (for example `ca.rentalsmart.smartservice://auth`).
+
+## EAS Builds
+
+`eas.json` is included with:
+- `preview` profile (internal distribution)
+- `production` profile (store release)
+
+Quick start:
+
+```bash
+npm i -g eas-cli
+eas login
+eas build --platform ios --profile preview
+```
 
 ## Integration Notes (Production)
 
