@@ -15,12 +15,9 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import { PrimaryButton } from '../components/PrimaryButton';
+import { runMicrosoftSignIn } from '../services/microsoftAuth';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const internalDomains = (process.env.EXPO_PUBLIC_INTERNAL_EMAIL_DOMAINS ?? 'rentalsmart.ca')
-  .split(',')
-  .map((item: string) => item.trim().toLowerCase())
-  .filter(Boolean);
 
 const openExternalUrl = async (url: string) => {
   const canOpen = await Linking.canOpenURL(url);
@@ -30,6 +27,34 @@ const openExternalUrl = async (url: string) => {
   }
 
   await Linking.openURL(url);
+};
+
+const toFriendlyAuthError = (error: unknown): string =>
+{
+  const message = (error as Error)?.message ?? 'Sign-in failed.';
+  const normalized = message.toLowerCase();
+
+  if (normalized.includes('no active portal contact found'))
+  {
+    return 'This email is not an active portal contact in Rental Smart. Internal PM users should use Continue with Microsoft. Tenant/Landlord/Admin users must exist as active contacts.';
+  }
+
+  if (normalized.includes('missing expo_public_entra_tenant_id') || normalized.includes('missing expo_public_entra_client_id'))
+  {
+    return 'Microsoft sign-in is not configured for this app build. Set EXPO_PUBLIC_ENTRA_TENANT_ID and EXPO_PUBLIC_ENTRA_CLIENT_ID, then rebuild.';
+  }
+
+  if (normalized.includes('microsoft token validation failed'))
+  {
+    return 'Microsoft sign-in token is invalid for this backend. Confirm mobile app client ID/tenant matches BFF PM_MOBILE_ENTRA_CLIENT_ID and PM_MOBILE_ENTRA_TENANT_ID.';
+  }
+
+  if (normalized.includes('cannot reach local bff') || normalized.includes('network request failed'))
+  {
+    return `${message}\n\nTips:\n1) Start rental-smart-bff on your Mac.\n2) Keep phone and Mac on same Wi-Fi.\n3) Set EXPO_PUBLIC_BFF_BASE_URL to http://<your-mac-lan-ip>:7071/api.`;
+  }
+
+  return message;
 };
 
 export const SignInScreen = () => {
@@ -73,37 +98,29 @@ export const SignInScreen = () => {
       setIsSubmitting(true);
       await signIn(trimmedEmail, password);
     } catch (error) {
-      Alert.alert('Sign-in failed', (error as Error).message);
+      Alert.alert('Sign-in failed', toFriendlyAuthError(error));
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const onPressMicrosoft = async () => {
-    setEmailTouched(true);
-
-    if (!emailValid) {
-      Alert.alert('Microsoft sign-in', 'Enter your internal work email to continue.');
-      return;
-    }
-
-    const domain = trimmedEmail.split('@')[1]?.toLowerCase() ?? '';
-    const isInternal = internalDomains.some((allowed: string) =>
-      domain === allowed || domain.endsWith(`.${allowed}`),
-    );
-    if (!isInternal) {
-      Alert.alert(
-        'Internal account required',
-        `Microsoft sign-in is only for internal PM accounts (${internalDomains.join(', ')}).`,
-      );
-      return;
-    }
+    const loginHint = emailValid ? trimmedEmail : undefined;
 
     try {
       setIsSubmitting(true);
-      await signInWithMicrosoft(trimmedEmail);
+      const microsoftResult = await runMicrosoftSignIn(loginHint);
+      await signInWithMicrosoft({
+        idToken: microsoftResult.idToken,
+        accessToken: microsoftResult.accessToken,
+        emailHint: loginHint,
+      });
     } catch (error) {
-      Alert.alert('Microsoft sign-in failed', (error as Error).message);
+      const message = toFriendlyAuthError(error);
+      if (message.toLowerCase().includes('cancelled')) {
+        return;
+      }
+      Alert.alert('Microsoft sign-in failed', message);
     } finally {
       setIsSubmitting(false);
     }

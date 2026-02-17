@@ -13,9 +13,10 @@ export interface SignInResponse {
   accessToken: string;
 }
 
-interface MicrosoftSignInRequest {
-  email?: string;
-  name?: string;
+export interface MicrosoftSignInRequest {
+  idToken: string;
+  accessToken?: string;
+  emailHint?: string;
 }
 
 export interface BootstrapResponse {

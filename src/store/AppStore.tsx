@@ -14,15 +14,8 @@ import {
   PmUser,
   SiteVisitNote,
 } from '../types/domain';
-import {
-  mockConversations,
-  mockMaintenanceRequests,
-  mockMessages,
-  mockPmUser,
-  mockVisitNotes,
-} from '../services/mockData';
 import { setApiAuthToken } from '../services/api';
-import { remoteApi } from '../services/remoteApi';
+import { remoteApi, type MicrosoftSignInRequest } from '../services/remoteApi';
 import { runtimeConfig } from '../services/runtimeConfig';
 import {
   ChatRealtimeClient,
@@ -64,7 +57,7 @@ interface AppStoreValue {
   visitNotes: SiteVisitNote[];
   isRemoteMode: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signInWithMicrosoft: (emailHint?: string) => Promise<void>;
+  signInWithMicrosoft: (payload: MicrosoftSignInRequest) => Promise<void>;
   signOut: () => void;
   updateProfile: (payload: UpdateProfileInput) => Promise<void>;
   markConversationRead: (conversationId: string) => void;
@@ -96,35 +89,12 @@ const sortConversations = (items: Conversation[]): Conversation[] => {
   );
 };
 
-type MockScopedDataset = {
-  conversations: Conversation[];
-  messages: Message[];
-  maintenanceRequests: MaintenanceRequest[];
-  visitNotes: SiteVisitNote[];
-};
-
-const allMockConversations = sortConversations(mockConversations);
-const allMockMessages = [...mockMessages];
-const allMockMaintenanceRequests = [...mockMaintenanceRequests];
-const allMockVisitNotes = [...mockVisitNotes];
-
-const initialConversations = allMockConversations;
+const initialConversations: Conversation[] = [];
+const initialMessages: Message[] = [];
+const initialMaintenanceRequests: MaintenanceRequest[] = [];
+const initialVisitNotes: SiteVisitNote[] = [];
 const isPmRole = (role: PmUser['role'] | undefined): boolean =>
   role === 'PM' || role === 'Supervisor';
-
-const detectRoleFromEmail = (email: string): PmUser['role'] => {
-  const normalized = email.toLowerCase();
-  if (normalized.includes('supervisor') || normalized.includes('admin')) {
-    return 'Supervisor';
-  }
-  if (normalized.includes('tenant')) {
-    return 'Tenant';
-  }
-  if (normalized.includes('landlord') || normalized.includes('owner')) {
-    return 'Landlord';
-  }
-  return 'PM';
-};
 
 const formatDisplayName = (email: string): string => {
   const localPart = email.split('@')[0]?.trim();
@@ -140,171 +110,6 @@ const formatDisplayName = (email: string): string => {
   );
 };
 
-const deriveStableIndex = (seed: string, max: number): number => {
-  if (max <= 0) return 0;
-  const normalized = seed.trim().toLowerCase();
-  if (!normalized) return 0;
-
-  let hash = 0;
-  for (let i = 0; i < normalized.length; i += 1) {
-    hash = (hash * 33 + normalized.charCodeAt(i)) % 1_000_000_007;
-  }
-  return Math.abs(hash) % max;
-};
-
-const uniqueSorted = (items: string[]): string[] =>
-  Array.from(new Set(items)).sort((a, b) => a.localeCompare(b));
-
-const scopePropertyIdsForLandlord = (email: string): string[] => {
-  const propertyIds = uniqueSorted(
-    allMockConversations.map((item) => item.property.id),
-  );
-  if (propertyIds.length <= 2) {
-    return propertyIds;
-  }
-
-  const start = deriveStableIndex(email, propertyIds.length);
-  return [
-    propertyIds[start],
-    propertyIds[(start + 1) % propertyIds.length],
-  ];
-};
-
-const scopeUnitIdForTenant = (email: string): string | null => {
-  const unitIds = uniqueSorted(allMockConversations.map((item) => item.unit.id));
-  if (unitIds.length === 0) {
-    return null;
-  }
-  const idx = deriveStableIndex(email, unitIds.length);
-  return unitIds[idx] ?? null;
-};
-
-const buildScopedMockData = (email: string, role: PmUser['role']): MockScopedDataset => {
-  if (isPmRole(role)) {
-    return {
-      conversations: allMockConversations,
-      messages: allMockMessages,
-      maintenanceRequests: allMockMaintenanceRequests,
-      visitNotes: allMockVisitNotes,
-    };
-  }
-
-  const normalizedEmail = email.trim().toLowerCase();
-  const propertyScope =
-    role === 'Landlord'
-      ? new Set(scopePropertyIdsForLandlord(normalizedEmail))
-      : null;
-  const unitScope =
-    role === 'Tenant'
-      ? scopeUnitIdForTenant(normalizedEmail)
-      : null;
-
-  const scopedConversations = allMockConversations.filter((item) => {
-    if (propertyScope) {
-      return propertyScope.has(item.property.id);
-    }
-    if (unitScope) {
-      return item.unit.id === unitScope;
-    }
-    return false;
-  });
-
-  const scopedConversationIds = new Set(scopedConversations.map((item) => item.id));
-  const scopedMaintenanceRequests = allMockMaintenanceRequests.filter((item) => {
-    if (propertyScope) {
-      return propertyScope.has(item.propertyId);
-    }
-    if (unitScope) {
-      return item.unitId === unitScope;
-    }
-    return false;
-  });
-  const scopedMaintenanceIds = new Set(scopedMaintenanceRequests.map((item) => item.id));
-
-  const scopedMessages = allMockMessages.filter((item) =>
-    scopedConversationIds.has(item.conversationId),
-  );
-  const scopedVisitNotes = allMockVisitNotes.filter((item) =>
-    scopedMaintenanceIds.has(item.maintenanceRequestId ?? '')
-    || (unitScope ? item.unitId === unitScope : false),
-  );
-
-  return {
-    conversations: sortConversations(scopedConversations),
-    messages: scopedMessages,
-    maintenanceRequests: scopedMaintenanceRequests,
-    visitNotes: scopedVisitNotes,
-  };
-};
-
-const buildMockProfile = (
-  email: string,
-  role: PmUser['role'],
-  displayName: string,
-  scopedData: MockScopedDataset,
-): PmUser => {
-  const firstConversation = scopedData.conversations[0];
-  const defaultAddress = firstConversation?.property.address;
-
-  if (role === 'Tenant') {
-    const unitLabel = firstConversation?.unit.label ?? 'your unit';
-    return {
-      ...mockPmUser,
-      name: displayName,
-      email,
-      role,
-      address: defaultAddress,
-      bio: `Tenant workspace for ${unitLabel}.`,
-      smsNotifs: false,
-    };
-  }
-
-  if (role === 'Landlord') {
-    return {
-      ...mockPmUser,
-      name: displayName,
-      email,
-      role,
-      address: defaultAddress,
-      bio: `Owner workspace for ${scopedData.conversations.length} active property chats.`,
-      smsNotifs: false,
-    };
-  }
-
-  return {
-    ...mockPmUser,
-    name: displayName,
-    email,
-    role,
-  };
-};
-
-const DEFAULT_WORKORDER_URL_PREFIX =
-  'https://org.crm.dynamics.com/main.aspx?etn=msdyn_workorder&pagetype=entityrecord&id=';
-
-const summarizeMaintenanceText = (value: string, maxLength: number): string => {
-  const normalized = value.replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return '';
-  }
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-  return `${normalized.slice(0, maxLength - 1).trimEnd()}…`;
-};
-
-const buildMaintenanceTitleFromNote = (note: string): string => {
-  const firstSentence = note.split(/[.!?]/)[0] ?? '';
-  const compact = summarizeMaintenanceText(firstSentence, 62);
-  if (compact.length >= 12) {
-    return compact;
-  }
-  return 'Site visit follow-up';
-};
-
-const buildMaintenanceSummaryFromNote = (note: string): string =>
-  summarizeMaintenanceText(note, 140) || 'Follow-up required from site visit.';
-
 const normalizePhotoUris = (
   photoUris?: string[],
   fallbackPhotoUri?: string,
@@ -318,20 +123,17 @@ const normalizePhotoUris = (
 const getPrimaryPhotoUri = (photoUris: string[]): string | undefined =>
   photoUris.length > 0 ? photoUris[0] : undefined;
 
-const buildMockWorkOrderId = (): string =>
-  `work-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations);
-  const [messages, setMessages] = useState<Message[]>(allMockMessages);
+  const [messages, setMessages] = useState<Message[]>(initialMessages);
   const [maintenanceRequests, setMaintenanceRequests] = useState<
     MaintenanceRequest[]
-  >(allMockMaintenanceRequests);
-  const [visitNotes, setVisitNotes] = useState<SiteVisitNote[]>(allMockVisitNotes);
+  >(initialMaintenanceRequests);
+  const [visitNotes, setVisitNotes] = useState<SiteVisitNote[]>(initialVisitNotes);
 
-  const isRemoteMode = !runtimeConfig.useMockData;
+  const isRemoteMode = true;
 
   const markConversationRead = useCallback((conversationId: string) => {
     setConversations((prev) =>
@@ -405,20 +207,6 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       throw new Error('Please enter a valid email.');
     }
 
-    if (runtimeConfig.useMockData) {
-      const role = detectRoleFromEmail(email);
-      const displayName = formatDisplayName(email);
-      const scoped = buildScopedMockData(email, role);
-
-      setApiAuthToken(null);
-      setCurrentUser(buildMockProfile(email, role, displayName, scoped));
-      setConversations(scoped.conversations);
-      setMessages(scoped.messages);
-      setMaintenanceRequests(scoped.maintenanceRequests);
-      setVisitNotes(scoped.visitNotes);
-      return;
-    }
-
     const session = await remoteApi.signIn(email, password);
     setApiAuthToken(session.accessToken);
     setCurrentUser(session.user);
@@ -430,27 +218,8 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setVisitNotes(bootstrap.visitNotes);
   }, []);
 
-  const signInWithMicrosoft = useCallback(async (emailHint?: string) => {
-    const normalizedEmailHint = emailHint?.trim().toLowerCase();
-
-    if (runtimeConfig.useMockData) {
-      const fallbackEmail = normalizedEmailHint || 'pm@rentalsmart.ca';
-      const displayName = formatDisplayName(fallbackEmail);
-      const scoped = buildScopedMockData(fallbackEmail, 'PM');
-
-      setApiAuthToken(null);
-      setCurrentUser(buildMockProfile(fallbackEmail, 'PM', displayName, scoped));
-      setConversations(scoped.conversations);
-      setMessages(scoped.messages);
-      setMaintenanceRequests(scoped.maintenanceRequests);
-      setVisitNotes(scoped.visitNotes);
-      return;
-    }
-
-    const session = await remoteApi.signInWithMicrosoft({
-      email: normalizedEmailHint,
-      name: normalizedEmailHint ? formatDisplayName(normalizedEmailHint) : undefined,
-    });
+  const signInWithMicrosoft = useCallback(async (payload: MicrosoftSignInRequest) => {
+    const session = await remoteApi.signInWithMicrosoft(payload);
     setApiAuthToken(session.accessToken);
     setCurrentUser(session.user);
 
@@ -465,9 +234,9 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setApiAuthToken(null);
     setCurrentUser(null);
     setConversations(initialConversations);
-    setMessages(allMockMessages);
-    setMaintenanceRequests(allMockMaintenanceRequests);
-    setVisitNotes(allMockVisitNotes);
+    setMessages(initialMessages);
+    setMaintenanceRequests(initialMaintenanceRequests);
+    setVisitNotes(initialVisitNotes);
   }, []);
 
   const updateProfile = useCallback(
@@ -506,9 +275,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         throw new Error('Please sign in before assigning conversations.');
       }
 
-      if (!runtimeConfig.useMockData) {
-        await remoteApi.assignConversation(conversationId);
-      }
+      await remoteApi.assignConversation(conversationId);
 
       const now = new Date().toISOString();
 
@@ -607,41 +374,22 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         noteText
         || `${currentUser.name} added a photo update.`;
       const source = payload.source ?? 'maintenance';
-      const now = new Date().toISOString();
-
-      if (!runtimeConfig.useMockData) {
-        const saved = await remoteApi.addMaintenanceUpdate(
-          payload.maintenanceRequestId,
-          {
-            note: resolvedNote,
-            photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
-            photoUris: normalizedPhotoUris,
-            source,
-          },
-        );
-        applyMaintenanceNoteState({
-          ...saved,
-          photoUris: normalizePhotoUris(saved.photoUris, saved.photoUri),
-          photoUri: getPrimaryPhotoUri(normalizePhotoUris(saved.photoUris, saved.photoUri)),
-          source: saved.source ?? source,
-          authorName: saved.authorName ?? currentUser.name,
-        });
-        return;
-      }
-
-      const local: SiteVisitNote = {
-        id: `maintenance-note-${Date.now()}`,
-        propertyId: request.propertyId,
-        unitId: request.unitId,
-        maintenanceRequestId: request.id,
-        note: resolvedNote,
-        photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
-        photoUris: normalizedPhotoUris,
-        source,
-        authorName: currentUser.name,
-        createdAt: now,
-      };
-      applyMaintenanceNoteState(local);
+      const saved = await remoteApi.addMaintenanceUpdate(
+        payload.maintenanceRequestId,
+        {
+          note: resolvedNote,
+          photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
+          photoUris: normalizedPhotoUris,
+          source,
+        },
+      );
+      applyMaintenanceNoteState({
+        ...saved,
+        photoUris: normalizePhotoUris(saved.photoUris, saved.photoUri),
+        photoUri: getPrimaryPhotoUri(normalizePhotoUris(saved.photoUris, saved.photoUri)),
+        source: saved.source ?? source,
+        authorName: saved.authorName ?? currentUser.name,
+      });
     },
     [applyMaintenanceNoteState, currentUser, maintenanceRequests],
   );
@@ -664,29 +412,18 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       }
 
       const body = trimmedText || 'Shared a photo.';
-      let message: Message | null = null;
       const actingAsPm = isPmRole(currentUser.role);
 
-      if (!runtimeConfig.useMockData) {
-        message = await remoteApi.sendMessage(conversationId, {
-          body,
-          photoUri,
-        });
-      }
+      const message = await remoteApi.sendMessage(conversationId, {
+        body,
+        photoUri,
+      });
 
       const now = message?.createdAt ?? new Date().toISOString();
 
       setMessages((prev) => [
         ...prev,
-        message ?? {
-          id: `msg-${Date.now()}`,
-          conversationId,
-          senderType: actingAsPm ? 'pm' : 'visitor',
-          senderName: currentUser.name,
-          body,
-          photoUri,
-          createdAt: now,
-        },
+        { ...message, createdAt: now },
       ]);
 
       setConversations((prev) =>
@@ -735,9 +472,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       throw new Error('Only PM/Supervisor can close conversations.');
     }
 
-    if (!runtimeConfig.useMockData) {
-      await remoteApi.closeConversation(conversationId);
-    }
+    await remoteApi.closeConversation(conversationId);
 
     const now = new Date().toISOString();
 
@@ -775,27 +510,10 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         throw new Error('Only PM/Supervisor can update maintenance status.');
       }
 
-      const now = new Date().toISOString();
-
-      if (!runtimeConfig.useMockData) {
-        const updated = await remoteApi.updateMaintenanceStatus(requestId, status);
-
-        setMaintenanceRequests((prev) =>
-          prev.map((item) => (item.id === requestId ? updated : item)),
-        );
-        return;
-      }
+      const updated = await remoteApi.updateMaintenanceStatus(requestId, status);
 
       setMaintenanceRequests((prev) =>
-        prev.map((item) =>
-          item.id === requestId
-            ? {
-                ...item,
-                status,
-                updatedAt: now,
-              }
-            : item,
-        ),
+        prev.map((item) => (item.id === requestId ? updated : item)),
       );
     },
     [currentUser?.role],
@@ -811,88 +529,36 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       throw new Error('Please add note details before saving.');
     }
 
-    const now = new Date().toISOString();
-    const normalizedPhotoUris = normalizePhotoUris(payload.photoUris, payload.photoUri);
-    const ensureMaintenanceRequestInState = (requestId?: string): string => {
-      const resolvedId =
-        requestId?.trim() || `mnt-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-      setMaintenanceRequests((prev) => {
-        if (prev.some((item) => item.id === resolvedId)) {
-          return prev;
-        }
-
-        const workOrderId = buildMockWorkOrderId();
-        const linkedConversation = conversations.find(
-          (item) =>
-            item.property.id === payload.propertyId
-            && item.unit.id === payload.unitId,
-        );
-        const created: MaintenanceRequest = {
-          id: resolvedId,
-          conversationId: linkedConversation?.id,
-          propertyId: payload.propertyId,
-          unitId: payload.unitId,
-          title: buildMaintenanceTitleFromNote(payload.note),
-          summary: buildMaintenanceSummaryFromNote(payload.note),
-          status: 'new',
-          priority: 'medium',
-          dataverseUrl: `${DEFAULT_WORKORDER_URL_PREFIX}${workOrderId}`,
-          updatedAt: now,
-        };
-        return [created, ...prev];
-      });
-      return resolvedId;
-    };
-
-    if (!runtimeConfig.useMockData) {
-      const saved = await remoteApi.addVisitNote(payload);
-      const resolvedMaintenanceRequestId =
-        saved.maintenanceRequestId?.trim() || ensureMaintenanceRequestInState();
-
-      ensureMaintenanceRequestInState(resolvedMaintenanceRequestId);
-
-      const normalizedSavedPhotoUris = normalizePhotoUris(saved.photoUris, saved.photoUri);
-      const normalizedSaved: SiteVisitNote = {
-        ...saved,
-        maintenanceRequestId: resolvedMaintenanceRequestId,
-        photoUris: normalizedSavedPhotoUris,
-        photoUri: getPrimaryPhotoUri(normalizedSavedPhotoUris),
-        source: saved.source ?? 'visit',
-        authorName: saved.authorName ?? actingUser.name,
-      };
-      applyMaintenanceNoteState(normalizedSaved);
-
-      return normalizedSaved;
+    const saved = await remoteApi.addVisitNote(payload);
+    const resolvedMaintenanceRequestId = saved.maintenanceRequestId?.trim();
+    if (!resolvedMaintenanceRequestId) {
+      throw new Error('Visit note saved, but backend did not return linked maintenance request.');
     }
 
-    const resolvedMaintenanceRequestId = payload.maintenanceRequestId
-      ? ensureMaintenanceRequestInState(payload.maintenanceRequestId)
-      : ensureMaintenanceRequestInState();
-
-    const note: SiteVisitNote = {
-      id: `visit-${Date.now()}`,
-      propertyId: payload.propertyId,
-      unitId: payload.unitId,
+    const normalizedSavedPhotoUris = normalizePhotoUris(saved.photoUris, saved.photoUri);
+    const normalizedSaved: SiteVisitNote = {
+      ...saved,
       maintenanceRequestId: resolvedMaintenanceRequestId,
-      note: payload.note,
-      photoUri: getPrimaryPhotoUri(normalizedPhotoUris),
-      photoUris: normalizedPhotoUris,
-      source: 'visit',
-      authorName: actingUser.name,
-      createdAt: now,
+      photoUris: normalizedSavedPhotoUris,
+      photoUri: getPrimaryPhotoUri(normalizedSavedPhotoUris),
+      source: saved.source ?? 'visit',
+      authorName: saved.authorName ?? actingUser.name,
     };
+    applyMaintenanceNoteState(normalizedSaved);
 
-    applyMaintenanceNoteState(note);
-    return note;
-  }, [applyMaintenanceNoteState, conversations, currentUser]);
+    // Refresh from backend to ensure newly auto-created maintenance requests are shown with full data.
+    const bootstrap = await remoteApi.getBootstrap();
+    setConversations(sortConversations(bootstrap.conversations));
+    setMessages(bootstrap.messages);
+    setMaintenanceRequests(bootstrap.maintenanceRequests);
+    setVisitNotes(bootstrap.visitNotes);
+
+    return normalizedSaved;
+  }, [applyMaintenanceNoteState, currentUser]);
 
   const connectConversationRealtime = useCallback(
     async (conversationId: string, onError?: (message: string) => void) => {
       if (!isPmRole(currentUser?.role)) {
-        return null;
-      }
-
-      if (runtimeConfig.useMockData) {
         return null;
       }
 

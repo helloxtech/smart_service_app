@@ -55,6 +55,14 @@ For iOS Simulator on the same Mac, prefer localhost mode:
 npm run ios:localhost
 ```
 
+Start the BFF in a separate terminal before attempting login:
+
+```bash
+cd ../rental-smart-bff
+npm install
+npm run dev
+```
+
 For a physical phone, use one of:
 
 ```bash
@@ -82,22 +90,27 @@ npm run typecheck
 Create `.env` (or set in EAS/local shell):
 
 ```bash
-EXPO_PUBLIC_USE_MOCK=false
 EXPO_PUBLIC_BFF_BASE_URL=http://127.0.0.1:7071/api
 EXPO_PUBLIC_CHAT_WS_URL=
 EXPO_PUBLIC_INTERNAL_EMAIL_DOMAINS=rentalsmart.ca
+EXPO_PUBLIC_ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000
+EXPO_PUBLIC_ENTRA_CLIENT_ID=00000000-0000-0000-0000-000000000000
+EXPO_PUBLIC_ENTRA_REDIRECT_SCHEME=ca.rentalsmart.smartservice
 ```
 
-- `EXPO_PUBLIC_USE_MOCK=false` connects Smart Service to your BFF (real Dataverse-backed PM data).
+- Smart Service now always runs in real-data mode through your BFF (no mock fallback).
 - Use `EXPO_PUBLIC_BFF_BASE_URL=http://127.0.0.1:7071/api` for iOS Simulator on the same Mac.
 - For physical devices, replace `127.0.0.1` with your Mac LAN IP (for example `http://192.168.1.243:7071/api`).
-- Set `EXPO_PUBLIC_USE_MOCK=true` only when you intentionally want local demo mode.
+- If BFF URL is still localhost, Smart Service now auto-resolves to your Metro host IP in debug device runs.
+- `EXPO_PUBLIC_ENTRA_TENANT_ID` and `EXPO_PUBLIC_ENTRA_CLIENT_ID` must match the Entra app registration used for mobile Microsoft login.
+- Redirect URI in Entra app registration should use the same custom scheme (for example `ca.rentalsmart.smartservice://auth`).
 
 ## Integration Notes (Production)
 
 1. **Authentication**
-- Replace demo login with Entra ID (MSAL) and BFF token exchange.
-- Keep PM role/permissions from BFF claims.
+- Microsoft button uses Entra OAuth Authorization Code + PKCE on-device.
+- App sends Microsoft `id_token` to BFF (`/mobile/pm/auth/microsoft`) for server-side signature/issuer/audience verification.
+- BFF issues PM mobile session JWT after domain/tenant/client checks.
 
 2. **Live Chat**
 - Use Cloudflare Worker + Durable Objects websocket endpoint.
@@ -114,9 +127,10 @@ EXPO_PUBLIC_INTERNAL_EMAIL_DOMAINS=rentalsmart.ca
 
 ## Remote API Contract Used by App
 
-When `EXPO_PUBLIC_USE_MOCK=false`, the app calls these BFF endpoints:
+The app calls these BFF endpoints:
 
 - `POST /mobile/pm/auth/sign-in`
+- `POST /mobile/pm/auth/microsoft` (expects Microsoft `id_token` from OAuth PKCE flow)
 - `GET /mobile/pm/bootstrap`
 - `POST /mobile/pm/conversations/:id/assign`
 - `POST /mobile/pm/conversations/:id/messages`

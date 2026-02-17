@@ -2,6 +2,7 @@
   "expo": {
     "name": "Smart Service",
     "slug": "smart-service",
+    "scheme": "ca.rentalsmart.smartservice",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -32,6 +33,9 @@
       "eas": {
         "projectId": "replace-with-your-eas-project-id"
       }
-    }
+    },
+    "plugins": [
+      "expo-web-browser"
+    ]
   }
 }
