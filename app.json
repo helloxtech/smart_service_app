@@ -15,7 +15,10 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "ca.rentalsmart.smartservice"
+      "bundleIdentifier": "ca.rentalsmart.smartservice",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
       "package": "ca.rentalsmart.smartservice",
@@ -31,11 +34,12 @@
     },
     "extra": {
       "eas": {
-        "projectId": "replace-with-your-eas-project-id"
+        "projectId": "c0a3f448-7d47-4b18-9c9a-349085b84cea"
       }
     },
     "plugins": [
       "expo-web-browser"
-    ]
+    ],
+    "owner": "hurryupgo"
   }
 }
