@@ -24,7 +24,7 @@ export const configureNotifications = (): void =>
     handleNotification: async () => ({
       shouldShowAlert: true,
       shouldPlaySound: true,
-      shouldSetBadge: false,
+      shouldSetBadge: true,
       shouldShowBanner: true,
       shouldShowList: true,
     }),
@@ -116,3 +116,24 @@ export const notifyIncomingChat = async (title: string, body: string): Promise<v
   });
 };
 
+export const setAppBadgeCount = async (count: number): Promise<void> =>
+{
+  configureNotifications();
+  const current = await Notifications.getPermissionsAsync();
+  const hasPermission = current.granted
+    || current.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL;
+  if (!hasPermission)
+  {
+    return;
+  }
+
+  const safeCount = Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0;
+  try
+  {
+    await Notifications.setBadgeCountAsync(safeCount);
+  }
+  catch
+  {
+    // Badge update is best effort only.
+  }
+};
