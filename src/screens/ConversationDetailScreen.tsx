@@ -14,6 +14,7 @@ import {
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { ChatBubble } from '../components/ChatBubble';
 import { MaintenanceCard } from '../components/MaintenanceCard';
 import { PrimaryButton } from '../components/PrimaryButton';
@@ -40,9 +41,11 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     closeConversation,
     updateMaintenanceStatus,
     connectConversationRealtime,
+    refreshConversationMessages,
     isRemoteMode,
     currentUser,
   } = useAppStore();
+  const insets = useSafeAreaInsets();
 
   const realtimeClientRef = useRef<ChatRealtimeClient | null>(null);
 
@@ -90,6 +93,22 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
   useEffect(() => {
     let active = true;
+    let pollTimer: ReturnType<typeof setInterval> | null = null;
+
+    const stopPolling = () => {
+      if (pollTimer) {
+        clearInterval(pollTimer);
+        pollTimer = null;
+      }
+    };
+
+    const startPolling = () => {
+      stopPolling();
+      void refreshConversationMessages(conversationId).catch(() => undefined);
+      pollTimer = setInterval(() => {
+        void refreshConversationMessages(conversationId).catch(() => undefined);
+      }, 4000);
+    };
 
     const connect = async () => {
       if (!isRemoteMode || !canManageConversation) {
@@ -115,12 +134,18 @@ export const ConversationDetailScreen = ({ route }: Props) => {
         }
 
         realtimeClientRef.current = client;
+        if (!client) {
+          startPolling();
+        } else {
+          void refreshConversationMessages(conversationId).catch(() => undefined);
+        }
       } catch (error) {
         if (!active) {
           return;
         }
 
         setRealtimeError((error as Error).message);
+        startPolling();
       }
     };
 
@@ -128,10 +153,17 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
     return () => {
       active = false;
+      stopPolling();
       realtimeClientRef.current?.close();
       realtimeClientRef.current = null;
     };
-  }, [canManageConversation, connectConversationRealtime, conversationId, isRemoteMode]);
+  }, [
+    canManageConversation,
+    connectConversationRealtime,
+    conversationId,
+    isRemoteMode,
+    refreshConversationMessages,
+  ]);
 
   if (!conversation) {
     return (
@@ -269,10 +301,16 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     <KeyboardAvoidingView
       style={styles.container}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      keyboardVerticalOffset={80}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 92 : 0}
     >
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={styles.contextCard}>
+      <View style={styles.inner}>
+        <ScrollView
+          style={styles.scroll}
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        >
+          <View style={styles.contextCard}>
           <View style={styles.contextHeader}>
             <View>
               <Text style={styles.visitor}>{conversation.visitorAlias}</Text>
@@ -346,79 +384,90 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           ))}
         </View>
 
-        <View style={styles.sectionHead}>
-          <Text style={styles.sectionTitle}>{workOrderSectionTitle}</Text>
-        </View>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>{workOrderSectionTitle}</Text>
+          </View>
 
-        <View style={styles.maintenanceWrap}>
-          {linkedMaintenance.length === 0 ? (
-            <Text style={styles.emptyMaintenance}>
-              No work order linked yet.
-            </Text>
-          ) : (
-            linkedMaintenance.map((request) => (
-              <MaintenanceCard
-                key={request.id}
-                compact
-                item={request}
-                readOnly={!canManageConversation || isClosed}
-                propertyName={conversation.property.name}
-                unitLabel={conversation.unit.label}
-                showDataverseLink={canManageConversation}
-                onOpenDataverse={
-                  canManageConversation
-                    ? () => openExternalUrl(request.dataverseUrl)
-                    : undefined
-                }
-                onStatusChange={(status) => onUpdateStatus(request.id, status)}
+          <View style={styles.maintenanceWrap}>
+            {linkedMaintenance.length === 0 ? (
+              <Text style={styles.emptyMaintenance}>
+                No work order linked yet.
+              </Text>
+            ) : (
+              linkedMaintenance.map((request) => (
+                <MaintenanceCard
+                  key={request.id}
+                  compact
+                  item={request}
+                  readOnly={!canManageConversation || isClosed}
+                  propertyName={conversation.property.name}
+                  unitLabel={conversation.unit.label}
+                  showDataverseLink={canManageConversation}
+                  onOpenDataverse={
+                    canManageConversation
+                      ? () => openExternalUrl(request.dataverseUrl)
+                      : undefined
+                  }
+                  onStatusChange={(status) => onUpdateStatus(request.id, status)}
+                />
+              ))
+            )}
+          </View>
+        </ScrollView>
+
+        {!isClosed ? (
+          <View
+            style={[
+              styles.composerWrap,
+              { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 10) },
+            ]}
+          >
+            {selectedPhotoUri && (
+              <View style={styles.photoPreviewRow}>
+                <Image source={{ uri: selectedPhotoUri }} style={styles.photoPreviewThumb} />
+                <Text style={styles.photoPreviewText}>Photo attached</Text>
+                <Pressable onPress={() => setSelectedPhotoUri(undefined)}>
+                  <Text style={styles.photoPreviewRemove}>Remove</Text>
+                </Pressable>
+              </View>
+            )}
+
+            <View style={styles.messageComposer}>
+              <Pressable style={styles.attachButton} onPress={() => void choosePhoto()}>
+                <Ionicons name="image-outline" size={20} color={colors.accent} />
+              </Pressable>
+              <TextInput
+                style={styles.input}
+                value={draft}
+                onChangeText={setDraft}
+                placeholder={canManageConversation ? 'Reply to visitor...' : 'Add a message update...'}
+                placeholderTextColor="#8D9AA5"
+                multiline
               />
-            ))
-          )}
-        </View>
-      </ScrollView>
-
-      {!isClosed ? (
-        <View style={styles.composerWrap}>
-          {selectedPhotoUri && (
-            <View style={styles.photoPreviewRow}>
-              <Image source={{ uri: selectedPhotoUri }} style={styles.photoPreviewThumb} />
-              <Text style={styles.photoPreviewText}>Photo attached</Text>
-              <Pressable onPress={() => setSelectedPhotoUri(undefined)}>
-                <Text style={styles.photoPreviewRemove}>Remove</Text>
+              <Pressable
+                onPress={() => void onSend()}
+                style={[
+                  styles.sendButton,
+                  !draft.trim() && !selectedPhotoUri && styles.sendButtonDisabled,
+                ]}
+              >
+                <Ionicons name="send" size={17} color="#FFFFFF" />
               </Pressable>
             </View>
-          )}
-
-          <View style={styles.messageComposer}>
-            <Pressable style={styles.attachButton} onPress={() => void choosePhoto()}>
-              <Ionicons name="image-outline" size={20} color={colors.accent} />
-            </Pressable>
-            <TextInput
-              style={styles.input}
-              value={draft}
-              onChangeText={setDraft}
-              placeholder={canManageConversation ? 'Reply to visitor...' : 'Add a message update...'}
-              placeholderTextColor="#8D9AA5"
-              multiline
-            />
-            <Pressable
-              onPress={() => void onSend()}
-              style={[
-                styles.sendButton,
-                !draft.trim() && !selectedPhotoUri && styles.sendButtonDisabled,
-              ]}
-            >
-              <Ionicons name="send" size={17} color="#FFFFFF" />
-            </Pressable>
           </View>
-        </View>
-      ) : (
-        <View style={styles.closedNoticeWrap}>
-          <Text style={styles.closedNoticeText}>
-            Conversation is closed. Reopen from back-office if new updates are needed.
-          </Text>
-        </View>
-      )}
+        ) : (
+          <View
+            style={[
+              styles.closedNoticeWrap,
+              { paddingBottom: Math.max(insets.bottom, Platform.OS === 'ios' ? 12 : 10) },
+            ]}
+          >
+            <Text style={styles.closedNoticeText}>
+              Conversation is closed. Reopen from back-office if new updates are needed.
+            </Text>
+          </View>
+        )}
+      </View>
     </KeyboardAvoidingView>
   );
 };
@@ -427,6 +476,12 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  inner: {
+    flex: 1,
+  },
+  scroll: {
+    flex: 1,
   },
   missingWrap: {
     flex: 1,
@@ -441,7 +496,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: spacing.md,
-    paddingBottom: 150,
+    paddingBottom: spacing.md,
     gap: spacing.md,
   },
   contextCard: {
@@ -568,13 +623,8 @@ const styles = StyleSheet.create({
     padding: spacing.md,
   },
   composerWrap: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
     paddingHorizontal: spacing.md,
     paddingTop: spacing.sm,
-    paddingBottom: Platform.OS === 'ios' ? 30 : 14,
     backgroundColor: colors.surface,
     borderTopWidth: 1,
     borderTopColor: colors.border,

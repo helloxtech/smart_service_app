@@ -31,6 +31,11 @@ export interface ChatAccessResponse {
   token: string;
 }
 
+export interface ConversationMessagesResponse {
+  conversationId: string;
+  messages: Message[];
+}
+
 interface VisitNoteInput {
   propertyId: string;
   unitId: string;
@@ -50,6 +55,11 @@ interface MaintenanceUpdateInput {
   photoUri?: string;
   photoUris?: string[];
   source?: 'maintenance' | 'chat';
+}
+
+interface RegisterPushTokenInput {
+  expoPushToken: string;
+  platform: 'ios' | 'android';
 }
 
 export const remoteApi = {
@@ -86,4 +96,10 @@ export const remoteApi = {
 
   getChatAccess: (conversationId: string) =>
     api.post<ChatAccessResponse>(`/mobile/pm/conversations/${conversationId}/chat-access`, {}),
+
+  getConversationMessages: (conversationId: string) =>
+    api.get<ConversationMessagesResponse>(`/public/live-chat/conversations/${conversationId}/messages`),
+
+  registerPushToken: (payload: RegisterPushTokenInput) =>
+    api.post<void>('/mobile/pm/push/register', payload),
 };

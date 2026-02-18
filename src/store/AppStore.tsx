@@ -6,6 +6,7 @@ import React, {
   useMemo,
   useState,
 } from 'react';
+import { Platform } from 'react-native';
 import {
   Conversation,
   MaintenanceRequest,
@@ -22,6 +23,10 @@ import {
   RealtimeMessagePayload,
   connectChatRealtime,
 } from '../services/chatRealtime';
+import {
+  notifyIncomingChat,
+  registerForExpoPushToken,
+} from '../services/notifications';
 
 interface AddVisitNoteInput {
   propertyId: string;
@@ -74,6 +79,7 @@ interface AppStoreValue {
   ) => Promise<void>;
   addVisitNote: (payload: AddVisitNoteInput) => Promise<SiteVisitNote>;
   addMaintenanceUpdate: (payload: AddMaintenanceUpdateInput) => Promise<void>;
+  refreshConversationMessages: (conversationId: string) => Promise<void>;
   connectConversationRealtime: (
     conversationId: string,
     onError?: (message: string) => void,
@@ -198,9 +204,41 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
           }),
         ),
       );
+
+      if (
+        isPmRole(currentUser?.role)
+        && (payload.senderType === 'visitor' || payload.senderType === 'bot')
+      ) {
+        const title =
+          payload.senderType === 'visitor'
+            ? `New message from ${payload.senderName}`
+            : 'Bot update';
+        const body = payload.body?.trim() || 'New chat activity.';
+        void notifyIncomingChat(title, body.slice(0, 140));
+      }
     },
-    [currentUser?.name],
+    [currentUser?.name, currentUser?.role],
   );
+
+  const registerPushNotifications = useCallback(async (user: PmUser) => {
+    if (!isPmRole(user.role)) {
+      return;
+    }
+
+    const expoPushToken = await registerForExpoPushToken();
+    if (!expoPushToken) {
+      return;
+    }
+
+    try {
+      await remoteApi.registerPushToken({
+        expoPushToken,
+        platform: Platform.OS === 'ios' ? 'ios' : 'android',
+      });
+    } catch {
+      // Notification registration should not block sign-in.
+    }
+  }, []);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!email.toLowerCase().includes('@')) {
@@ -216,7 +254,8 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setMessages(bootstrap.messages);
     setMaintenanceRequests(bootstrap.maintenanceRequests);
     setVisitNotes(bootstrap.visitNotes);
-  }, []);
+    void registerPushNotifications(session.user);
+  }, [registerPushNotifications]);
 
   const signInWithMicrosoft = useCallback(async (payload: MicrosoftSignInRequest) => {
     const session = await remoteApi.signInWithMicrosoft(payload);
@@ -228,7 +267,8 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     setMessages(bootstrap.messages);
     setMaintenanceRequests(bootstrap.maintenanceRequests);
     setVisitNotes(bootstrap.visitNotes);
-  }, []);
+    void registerPushNotifications(session.user);
+  }, [registerPushNotifications]);
 
   const signOut = useCallback(() => {
     setApiAuthToken(null);
@@ -556,6 +596,89 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
     return normalizedSaved;
   }, [applyMaintenanceNoteState, currentUser]);
 
+  const refreshConversationMessages = useCallback(
+    async (conversationId: string) => {
+      const response = await remoteApi.getConversationMessages(conversationId);
+      const remoteMessages = [...response.messages].sort(
+        (a, b) =>
+          new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      );
+
+      const insertedMessages: Message[] = [];
+      let latestCreatedAt: string | null = null;
+
+      setMessages((prev) => {
+        const existingIds = new Set(
+          prev
+            .filter((item) => item.conversationId === conversationId)
+            .map((item) => item.id),
+        );
+
+        let merged = prev;
+
+        for (const item of remoteMessages) {
+          if (
+            !latestCreatedAt
+            || new Date(item.createdAt).getTime() > new Date(latestCreatedAt).getTime()
+          ) {
+            latestCreatedAt = item.createdAt;
+          }
+
+          if (existingIds.has(item.id)) {
+            continue;
+          }
+
+          insertedMessages.push(item);
+          existingIds.add(item.id);
+          merged = [...merged, item];
+        }
+
+        return merged;
+      });
+
+      if (insertedMessages.length === 0) {
+        return;
+      }
+
+      const unreadIncrements = insertedMessages.filter(
+        (item) =>
+          item.senderType === 'visitor'
+          || item.senderType === 'bot'
+          || (item.senderType === 'pm' && item.senderName !== currentUser?.name),
+      ).length;
+
+      setConversations((prev) =>
+        sortConversations(
+          prev.map((item) =>
+            item.id === conversationId
+              ? {
+                  ...item,
+                  unreadCount: item.unreadCount + unreadIncrements,
+                  lastMessageAt: latestCreatedAt ?? item.lastMessageAt,
+                }
+              : item,
+          ),
+        ),
+      );
+
+      if (isPmRole(currentUser?.role)) {
+        for (const item of insertedMessages) {
+          if (item.senderType !== 'visitor' && item.senderType !== 'bot') {
+            continue;
+          }
+
+          const title =
+            item.senderType === 'visitor'
+              ? `New message from ${item.senderName}`
+              : 'Bot update';
+          const body = item.body?.trim() || 'New chat activity.';
+          void notifyIncomingChat(title, body.slice(0, 140));
+        }
+      }
+    },
+    [currentUser?.name, currentUser?.role],
+  );
+
   const connectConversationRealtime = useCallback(
     async (conversationId: string, onError?: (message: string) => void) => {
       if (!isPmRole(currentUser?.role)) {
@@ -566,9 +689,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       const wsUrl = access.wsUrl ?? runtimeConfig.defaultChatWsUrl;
 
       if (!wsUrl) {
-        throw new Error(
-          'Missing websocket URL. Configure EXPO_PUBLIC_CHAT_WS_URL or provide wsUrl from chat-access endpoint.',
-        );
+        return null;
       }
 
       return connectChatRealtime({
@@ -601,6 +722,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       updateMaintenanceStatus,
       addVisitNote,
       addMaintenanceUpdate,
+      refreshConversationMessages,
       connectConversationRealtime,
     }),
     [
@@ -621,6 +743,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       signOut,
       updateProfile,
       updateMaintenanceStatus,
+      refreshConversationMessages,
       visitNotes,
     ],
   );

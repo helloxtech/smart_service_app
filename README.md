@@ -136,6 +136,7 @@ eas build --platform ios --profile preview
 - Use Cloudflare Worker + Durable Objects websocket endpoint.
 - Enable websocket hibernation in DO implementation to control duration cost.
 - The app requests chat socket access from `POST /mobile/pm/conversations/:id/chat-access` and then opens websocket.
+- If websocket URL is not configured, the app now falls back to periodic message polling so PM can still receive visitor updates.
 
 3. **Dataverse Boundary**
 - Keep full chat transcripts in Cloudflare (D1).
@@ -158,6 +159,7 @@ The app calls these BFF endpoints:
 - `PATCH /mobile/pm/maintenance/:id`
 - `POST /mobile/pm/visit-notes`
 - `POST /mobile/pm/conversations/:id/chat-access`
+- `POST /mobile/pm/push/register`
 
 ## UX Decisions for PM Workflow
 
@@ -168,7 +170,7 @@ The app calls these BFF endpoints:
 
 ## Next Recommended Enhancements
 
-- Push notifications (APNs/FCM)
+- Persist PM push tokens in Dataverse (or another durable store) instead of in-memory BFF state
 - Queue assignment rules (`new`, `assigned`, `waiting`, `closed`)
 - Offline cache + retry for poor building connectivity
 - Bot confidence threshold + auto-handoff trigger configuration
