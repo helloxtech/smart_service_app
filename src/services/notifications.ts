@@ -111,6 +111,7 @@ export const notifyIncomingChat = async (title: string, body: string): Promise<v
       title,
       body,
       sound: true,
+      badge: 1,
     },
     trigger: null,
   });
