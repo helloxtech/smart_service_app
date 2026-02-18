@@ -71,6 +71,7 @@ interface AppStoreValue {
     conversationId: string,
     text: string,
     photoUri?: string,
+    forceSendIfInactive?: boolean,
   ) => Promise<void>;
   closeConversation: (conversationId: string) => Promise<void>;
   updateMaintenanceStatus: (
@@ -435,7 +436,12 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   );
 
   const sendMessage = useCallback(
-    async (conversationId: string, text: string, photoUri?: string) => {
+    async (
+      conversationId: string,
+      text: string,
+      photoUri?: string,
+      forceSendIfInactive = false,
+    ) => {
       if (!currentUser) {
         return;
       }
@@ -457,6 +463,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       const message = await remoteApi.sendMessage(conversationId, {
         body,
         photoUri,
+        forceSendIfInactive,
       });
 
       const now = message?.createdAt ?? new Date().toISOString();
@@ -504,7 +511,12 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         }
       }
     },
-    [addMaintenanceUpdate, conversations, currentUser, resolveLinkedMaintenanceRequest],
+    [
+      addMaintenanceUpdate,
+      conversations,
+      currentUser,
+      resolveLinkedMaintenanceRequest,
+    ],
   );
 
   const closeConversation = useCallback(async (conversationId: string) => {

@@ -48,6 +48,7 @@ interface VisitNoteInput {
 interface ConversationMessageInput {
   body: string;
   photoUri?: string;
+  forceSendIfInactive?: boolean;
 }
 
 interface MaintenanceUpdateInput {

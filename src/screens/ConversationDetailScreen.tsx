@@ -199,13 +199,45 @@ export const ConversationDetailScreen = ({ route }: Props) => {
       return;
     }
 
-    try {
-      await sendMessage(conversation.id, draft, selectedPhotoUri);
-      setDraft('');
-      setSelectedPhotoUri(undefined);
-    } catch (error) {
-      Alert.alert('Unable to send', (error as Error).message);
-    }
+    const sendWithGuard = async (forceSendIfInactive: boolean) => {
+      try {
+        await sendMessage(
+          conversation.id,
+          draft,
+          selectedPhotoUri,
+          forceSendIfInactive,
+        );
+        setDraft('');
+        setSelectedPhotoUri(undefined);
+      } catch (error) {
+        const message = (error as Error).message ?? 'Unable to send message.';
+        const lower = message.toLowerCase();
+        const inactiveConflict =
+          lower.includes('chat_inactive')
+          || lower.includes('visitor appears inactive');
+
+        if (inactiveConflict && !forceSendIfInactive) {
+          Alert.alert(
+            'Visitor may have left',
+            'No recent visitor activity. Send reply anyway?',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Send anyway',
+                onPress: () => {
+                  void sendWithGuard(true);
+                },
+              },
+            ],
+          );
+          return;
+        }
+
+        Alert.alert('Unable to send', message);
+      }
+    };
+
+    await sendWithGuard(false);
   };
 
   const onCloseConversation = () => {
