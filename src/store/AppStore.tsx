@@ -611,6 +611,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const refreshConversationMessages = useCallback(
     async (conversationId: string) => {
       const response = await remoteApi.getConversationMessages(conversationId);
+      const remoteConversation = response.conversation;
       const remoteMessages = [...response.messages].sort(
         (a, b) =>
           new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
@@ -649,6 +650,28 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       });
 
       if (insertedMessages.length === 0) {
+        if (remoteConversation) {
+          setConversations((prev) =>
+            sortConversations(
+              prev.map((item) =>
+                item.id === conversationId
+                  ? {
+                      ...item,
+                      status: remoteConversation.status ?? item.status,
+                      lifecycleStatus: remoteConversation.lifecycleStatus ?? item.lifecycleStatus,
+                      closedReason: remoteConversation.closedReason ?? item.closedReason,
+                      assignedPmId: remoteConversation.assignedPmId ?? item.assignedPmId,
+                      unreadCount:
+                        typeof remoteConversation.unreadCount === 'number'
+                          ? remoteConversation.unreadCount
+                          : item.unreadCount,
+                      lastMessageAt: remoteConversation.lastMessageAt ?? item.lastMessageAt,
+                    }
+                  : item,
+              ),
+            ),
+          );
+        }
         return;
       }
 
@@ -665,8 +688,18 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
             item.id === conversationId
               ? {
                   ...item,
-                  unreadCount: item.unreadCount + unreadIncrements,
-                  lastMessageAt: latestCreatedAt ?? item.lastMessageAt,
+                  status: remoteConversation?.status ?? item.status,
+                  lifecycleStatus: remoteConversation?.lifecycleStatus ?? item.lifecycleStatus,
+                  closedReason: remoteConversation?.closedReason ?? item.closedReason,
+                  assignedPmId: remoteConversation?.assignedPmId ?? item.assignedPmId,
+                  unreadCount:
+                    typeof remoteConversation?.unreadCount === 'number'
+                      ? remoteConversation.unreadCount
+                      : item.unreadCount + unreadIncrements,
+                  lastMessageAt:
+                    remoteConversation?.lastMessageAt
+                    ?? latestCreatedAt
+                    ?? item.lastMessageAt,
                 }
               : item,
           ),

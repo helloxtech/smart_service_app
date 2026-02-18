@@ -1,4 +1,5 @@
 export type ConversationStatus = 'new' | 'assigned' | 'waiting' | 'closed';
+export type ConversationLifecycleStatus = 'active' | 'away' | 'offline' | 'inactive' | 'closed';
 export type SenderType = 'visitor' | 'pm' | 'bot' | 'system';
 export type MaintenanceStatus = 'new' | 'in_progress' | 'done';
 export type UserRole = 'PM' | 'Supervisor' | 'Tenant' | 'Landlord';
@@ -72,6 +73,8 @@ export interface Conversation {
   id: string;
   visitorAlias: string;
   status: ConversationStatus;
+  lifecycleStatus?: ConversationLifecycleStatus;
+  closedReason?: string;
   property: PropertyInfo;
   unit: UnitInfo;
   assignedPmId?: string;

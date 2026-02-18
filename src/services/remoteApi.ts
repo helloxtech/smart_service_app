@@ -33,6 +33,7 @@ export interface ChatAccessResponse {
 
 export interface ConversationMessagesResponse {
   conversationId: string;
+  conversation?: Conversation;
   messages: Message[];
 }
 
@@ -99,7 +100,7 @@ export const remoteApi = {
     api.post<ChatAccessResponse>(`/mobile/pm/conversations/${conversationId}/chat-access`, {}),
 
   getConversationMessages: (conversationId: string) =>
-    api.get<ConversationMessagesResponse>(`/public/live-chat/conversations/${conversationId}/messages`),
+    api.get<ConversationMessagesResponse>(`/mobile/pm/conversations/${conversationId}/messages`),
 
   registerPushToken: (payload: RegisterPushTokenInput) =>
     api.post<void>('/mobile/pm/push/register', payload),
