@@ -36,6 +36,12 @@ const resolveApiBaseUrl = (): string | null =>
   try
   {
     const parsed = new URL(configured);
+
+    if (!__DEV__ && parsed.protocol !== 'https:')
+    {
+      return trimTrailingSlash(DEFAULT_PUBLIC_BFF_BASE_URL);
+    }
+
     if (!LOCAL_HOSTS.has(parsed.hostname))
     {
       return trimTrailingSlash(parsed.toString());
@@ -55,6 +61,11 @@ const resolveApiBaseUrl = (): string | null =>
   }
   catch
   {
+    if (!__DEV__)
+    {
+      return trimTrailingSlash(DEFAULT_PUBLIC_BFF_BASE_URL);
+    }
+
     return trimTrailingSlash(configured);
   }
 

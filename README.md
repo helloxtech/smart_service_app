@@ -3,13 +3,13 @@
 Smart Service is a cross-platform iOS/Android mobile app with role-based layouts.
 
 V1 scope implemented:
-- Live inbox with bot-to-PM handoff flow
-- Conversation detail with chat thread and PM reply composer
+- Live inbox with bot-to-manager handoff flow
+- Conversation detail with chat thread and manager reply composer
 - Property/unit context (read-only) in chat
 - Maintenance request summary and status updates (`New`, `In Progress`, `Done`)
 - Site visit note capture with optional photo attachment
 - Deep links to full Dataverse records when more detail is needed
-- Role-based sign-in and tab layout (`PM`, `Supervisor`, `Tenant`, `Landlord`)
+- Role-based sign-in and tab layout (`Manager`, `Supervisor`, `Tenant`, `Landlord`)
 
 ## Tech Stack
 
@@ -101,6 +101,7 @@ EXPO_PUBLIC_INTERNAL_EMAIL_DOMAINS=rentalsmart.ca
 EXPO_PUBLIC_ENTRA_TENANT_ID=00000000-0000-0000-0000-000000000000
 EXPO_PUBLIC_ENTRA_CLIENT_ID=00000000-0000-0000-0000-000000000000
 EXPO_PUBLIC_ENTRA_REDIRECT_SCHEME=ca.rentalsmart.smartservice
+EXPO_PUBLIC_ENABLE_EMAIL_PASSWORD_SIGN_IN=false
 ```
 
 - Smart Service now always runs in real-data mode through your BFF (no mock fallback).
@@ -110,6 +111,8 @@ EXPO_PUBLIC_ENTRA_REDIRECT_SCHEME=ca.rentalsmart.smartservice
 - Release builds automatically fall back to `https://rental-smart-bff-bga2cjeqazb7e8f9.canadacentral-01.azurewebsites.net/api` when localhost is not valid.
 - `EXPO_PUBLIC_ENTRA_TENANT_ID` and `EXPO_PUBLIC_ENTRA_CLIENT_ID` must match the Entra app registration used for mobile Microsoft login.
 - Redirect URI in Entra app registration should use the same custom scheme (for example `ca.rentalsmart.smartservice://auth`).
+- `EXPO_PUBLIC_ENABLE_EMAIL_PASSWORD_SIGN_IN` should remain `false` in production. Enable only for controlled local/testing flows.
+- In production builds, non-HTTPS `EXPO_PUBLIC_BFF_BASE_URL` values are ignored and replaced with the default public HTTPS BFF URL.
 
 ## EAS Builds
 
@@ -130,13 +133,13 @@ eas build --platform ios --profile preview
 1. **Authentication**
 - Microsoft button uses Entra OAuth Authorization Code + PKCE on-device.
 - App sends Microsoft `id_token` to BFF (`/mobile/pm/auth/microsoft`) for server-side signature/issuer/audience verification.
-- BFF issues PM mobile session JWT after domain/tenant/client checks.
+- BFF issues manager mobile session JWT after domain/tenant/client checks.
 
 2. **Live Chat**
 - Use Cloudflare Worker + Durable Objects websocket endpoint.
 - Enable websocket hibernation in DO implementation to control duration cost.
 - The app requests chat socket access from `POST /mobile/pm/conversations/:id/chat-access` and then opens websocket.
-- If websocket URL is not configured, the app now falls back to periodic message polling so PM can still receive visitor updates.
+- If websocket URL is not configured, the app now falls back to periodic message polling so managers can still receive visitor updates.
 
 3. **Dataverse Boundary**
 - Keep full chat transcripts in Cloudflare (D1).
@@ -150,7 +153,7 @@ eas build --platform ios --profile preview
 
 The app calls these BFF endpoints:
 
-- `POST /mobile/pm/auth/sign-in`
+- `POST /mobile/pm/auth/sign-in` (optional; only when `EXPO_PUBLIC_ENABLE_EMAIL_PASSWORD_SIGN_IN=true`)
 - `POST /mobile/pm/auth/microsoft` (expects Microsoft `id_token` from OAuth PKCE flow)
 - `GET /mobile/pm/bootstrap`
 - `POST /mobile/pm/conversations/:id/assign`
@@ -161,7 +164,7 @@ The app calls these BFF endpoints:
 - `POST /mobile/pm/conversations/:id/chat-access`
 - `POST /mobile/pm/push/register`
 
-## UX Decisions for PM Workflow
+## UX Decisions for Manager Workflow
 
 - Conversation page prioritizes context above chat to reduce back-and-forth.
 - Status updates are one-tap segmented actions for field speed.
@@ -170,7 +173,7 @@ The app calls these BFF endpoints:
 
 ## Next Recommended Enhancements
 
-- Persist PM push tokens in Dataverse (or another durable store) instead of in-memory BFF state
+- Persist manager push tokens in Dataverse (or another durable store) instead of in-memory BFF state
 - Queue assignment rules (`new`, `assigned`, `waiting`, `closed`)
 - Offline cache + retry for poor building connectivity
 - Bot confidence threshold + auto-handoff trigger configuration

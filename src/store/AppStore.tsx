@@ -1,6 +1,7 @@
 import React, {
   PropsWithChildren,
   createContext,
+  useEffect,
   useCallback,
   useContext,
   useMemo,
@@ -27,6 +28,11 @@ import {
   notifyIncomingChat,
   registerForExpoPushToken,
 } from '../services/notifications';
+import {
+  clearPersistedAuthSession,
+  loadPersistedAuthSession,
+  persistAuthSession,
+} from '../services/authSession';
 
 interface AddVisitNoteInput {
   propertyId: string;
@@ -55,12 +61,14 @@ interface UpdateProfileInput {
 }
 
 interface AppStoreValue {
+  isHydratingAuth: boolean;
   currentUser: PmUser | null;
   conversations: Conversation[];
   messages: Message[];
   maintenanceRequests: MaintenanceRequest[];
   visitNotes: SiteVisitNote[];
   isRemoteMode: boolean;
+  refreshBootstrap: () => Promise<void>;
   signIn: (email: string, password: string) => Promise<void>;
   signInWithMicrosoft: (payload: MicrosoftSignInRequest) => Promise<void>;
   signOut: () => void;
@@ -96,12 +104,41 @@ const sortConversations = (items: Conversation[]): Conversation[] => {
   );
 };
 
+const normalizeConversation = (item: Conversation): Conversation =>
+  item.status === 'closed'
+    ? {
+        ...item,
+        unreadCount: 0,
+      }
+    : item;
+
+const normalizeConversations = (items: Conversation[]): Conversation[] =>
+  items.map(normalizeConversation);
+
 const initialConversations: Conversation[] = [];
 const initialMessages: Message[] = [];
 const initialMaintenanceRequests: MaintenanceRequest[] = [];
 const initialVisitNotes: SiteVisitNote[] = [];
 const isPmRole = (role: PmUser['role'] | undefined): boolean =>
   role === 'PM' || role === 'Supervisor';
+
+const getErrorMessage = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error ?? 'unknown_error');
+
+const logAuthEvent = (event: string, data: Record<string, unknown> = {}): void =>
+{
+  // eslint-disable-next-line no-console
+  console.info(`[auth] ${event}`, data);
+};
+
+const logAuthWarn = (event: string, error: unknown, data: Record<string, unknown> = {}): void =>
+{
+  // eslint-disable-next-line no-console
+  console.warn(`[auth] ${event}`, {
+    ...data,
+    message: getErrorMessage(error),
+  });
+};
 
 const formatDisplayName = (email: string): string => {
   const localPart = email.split('@')[0]?.trim();
@@ -131,6 +168,7 @@ const getPrimaryPhotoUri = (photoUris: string[]): string | undefined =>
   photoUris.length > 0 ? photoUris[0] : undefined;
 
 export const AppStoreProvider = ({ children }: PropsWithChildren) => {
+  const [isHydratingAuth, setIsHydratingAuth] = useState(true);
   const [currentUser, setCurrentUser] = useState<PmUser | null>(null);
   const [conversations, setConversations] =
     useState<Conversation[]>(initialConversations);
@@ -142,15 +180,38 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
   const isRemoteMode = true;
 
+  const applyBootstrapState = useCallback((bootstrap: {
+    conversations: Conversation[];
+    messages: Message[];
+    maintenanceRequests: MaintenanceRequest[];
+    visitNotes: SiteVisitNote[];
+  }) => {
+    setConversations(sortConversations(normalizeConversations(bootstrap.conversations)));
+    setMessages(bootstrap.messages);
+    setMaintenanceRequests(bootstrap.maintenanceRequests);
+    setVisitNotes(bootstrap.visitNotes);
+  }, []);
+
+  const refreshBootstrap = useCallback(async () => {
+    if (!currentUser) {
+      return;
+    }
+
+    const bootstrap = await remoteApi.getBootstrap();
+    applyBootstrapState(bootstrap);
+  }, [applyBootstrapState, currentUser]);
+
   const markConversationRead = useCallback((conversationId: string) => {
     setConversations((prev) =>
-      prev.map((item) =>
-        item.id === conversationId
-          ? {
-              ...item,
-              unreadCount: 0,
-            }
-          : item,
+      normalizeConversations(
+        prev.map((item) =>
+          item.id === conversationId
+            ? {
+                ...item,
+                unreadCount: 0,
+              }
+            : item,
+        ),
       ),
     );
   }, []);
@@ -183,26 +244,32 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
       setConversations((prev) =>
         sortConversations(
-          prev.map((item) => {
-            if (item.id !== payload.conversationId) {
-              return item;
-            }
+          normalizeConversations(
+            prev.map((item) => {
+              if (item.id !== payload.conversationId) {
+                return item;
+              }
 
-            const fromVisitorOrBot =
-              payload.senderType === 'visitor' || payload.senderType === 'bot';
-            const fromAnotherPm =
-              payload.senderType === 'pm' &&
-              payload.senderName !== currentUser?.name;
+              if (item.status === 'closed') {
+                return item;
+              }
 
-            return {
-              ...item,
-              lastMessageAt: createdAt,
-              unreadCount:
-                fromVisitorOrBot || fromAnotherPm
-                  ? item.unreadCount + 1
-                  : item.unreadCount,
-            };
-          }),
+              const fromVisitorOrBot =
+                payload.senderType === 'visitor' || payload.senderType === 'bot';
+              const fromAnotherPm =
+                payload.senderType === 'pm' &&
+                payload.senderName !== currentUser?.name;
+
+              return {
+                ...item,
+                lastMessageAt: createdAt,
+                unreadCount:
+                  fromVisitorOrBot || fromAnotherPm
+                    ? item.unreadCount + 1
+                    : item.unreadCount,
+              };
+            }),
+          ),
         ),
       );
 
@@ -222,10 +289,6 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   );
 
   const registerPushNotifications = useCallback(async (user: PmUser) => {
-    if (!isPmRole(user.role)) {
-      return;
-    }
-
     const expoPushToken = await registerForExpoPushToken();
     if (!expoPushToken) {
       return;
@@ -236,43 +299,108 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         expoPushToken,
         platform: Platform.OS === 'ios' ? 'ios' : 'android',
       });
-    } catch {
+    } catch (error) {
       // Notification registration should not block sign-in.
+      logAuthWarn('push_registration_failed', error, { userId: user.id });
     }
   }, []);
+
+  useEffect(() => {
+    let active = true;
+
+    const restoreSession = async () => {
+      try {
+        const session = await loadPersistedAuthSession();
+        if (!session) {
+          logAuthEvent('restore.no_session');
+          return;
+        }
+
+        setApiAuthToken(session.accessToken);
+        setCurrentUser(session.user);
+
+        const bootstrap = await remoteApi.getBootstrap();
+        if (!active) {
+          return;
+        }
+
+        applyBootstrapState(bootstrap);
+        void registerPushNotifications(session.user);
+        logAuthEvent('restore.success', { userId: session.user.id, role: session.user.role });
+      } catch (error) {
+        if (!active) {
+          return;
+        }
+
+        logAuthWarn('restore.failed', error);
+        setApiAuthToken(null);
+        setCurrentUser(null);
+        setConversations(initialConversations);
+        setMessages(initialMessages);
+        setMaintenanceRequests(initialMaintenanceRequests);
+        setVisitNotes(initialVisitNotes);
+        void clearPersistedAuthSession();
+      } finally {
+        if (active) {
+          setIsHydratingAuth(false);
+        }
+      }
+    };
+
+    void restoreSession();
+    return () => {
+      active = false;
+    };
+  }, [applyBootstrapState, registerPushNotifications]);
 
   const signIn = useCallback(async (email: string, password: string) => {
     if (!email.toLowerCase().includes('@')) {
       throw new Error('Please enter a valid email.');
     }
 
-    const session = await remoteApi.signIn(email, password);
-    setApiAuthToken(session.accessToken);
-    setCurrentUser(session.user);
+    try {
+      const session = await remoteApi.signIn(email, password);
+      setApiAuthToken(session.accessToken);
+      setCurrentUser(session.user);
+      await persistAuthSession({
+        accessToken: session.accessToken,
+        user: session.user,
+      });
 
-    const bootstrap = await remoteApi.getBootstrap();
-    setConversations(sortConversations(bootstrap.conversations));
-    setMessages(bootstrap.messages);
-    setMaintenanceRequests(bootstrap.maintenanceRequests);
-    setVisitNotes(bootstrap.visitNotes);
-    void registerPushNotifications(session.user);
-  }, [registerPushNotifications]);
+      const bootstrap = await remoteApi.getBootstrap();
+      applyBootstrapState(bootstrap);
+      void registerPushNotifications(session.user);
+      logAuthEvent('sign_in.success', { userId: session.user.id, role: session.user.role });
+    } catch (error) {
+      logAuthWarn('sign_in.failed', error);
+      throw error;
+    }
+  }, [applyBootstrapState, registerPushNotifications]);
 
   const signInWithMicrosoft = useCallback(async (payload: MicrosoftSignInRequest) => {
-    const session = await remoteApi.signInWithMicrosoft(payload);
-    setApiAuthToken(session.accessToken);
-    setCurrentUser(session.user);
+    try {
+      const session = await remoteApi.signInWithMicrosoft(payload);
+      setApiAuthToken(session.accessToken);
+      setCurrentUser(session.user);
+      await persistAuthSession({
+        accessToken: session.accessToken,
+        user: session.user,
+      });
 
-    const bootstrap = await remoteApi.getBootstrap();
-    setConversations(sortConversations(bootstrap.conversations));
-    setMessages(bootstrap.messages);
-    setMaintenanceRequests(bootstrap.maintenanceRequests);
-    setVisitNotes(bootstrap.visitNotes);
-    void registerPushNotifications(session.user);
-  }, [registerPushNotifications]);
+      const bootstrap = await remoteApi.getBootstrap();
+      applyBootstrapState(bootstrap);
+      void registerPushNotifications(session.user);
+      logAuthEvent('microsoft_sign_in.success', { userId: session.user.id, role: session.user.role });
+    } catch (error) {
+      logAuthWarn('microsoft_sign_in.failed', error);
+      throw error;
+    }
+  }, [applyBootstrapState, registerPushNotifications]);
 
   const signOut = useCallback(() => {
+    logAuthEvent('sign_out');
     setApiAuthToken(null);
+    void clearPersistedAuthSession();
     setCurrentUser(null);
     setConversations(initialConversations);
     setMessages(initialMessages);
@@ -322,16 +450,18 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
       setConversations((prev) =>
         sortConversations(
-          prev.map((item) =>
-            item.id === conversationId
-              ? {
-                  ...item,
-                  status: 'assigned',
-                  assignedPmId: currentUser.id,
-                  lastMessageAt: now,
-                  unreadCount: 0,
-                }
-              : item,
+          normalizeConversations(
+            prev.map((item) =>
+              item.id === conversationId
+                ? {
+                    ...item,
+                    status: 'assigned',
+                    assignedPmId: currentUser.id,
+                    lastMessageAt: now,
+                    unreadCount: 0,
+                  }
+                : item,
+            ),
           ),
         ),
       );
@@ -475,22 +605,24 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
       setConversations((prev) =>
         sortConversations(
-          prev.map((item) =>
-            item.id === conversationId
-              ? {
-                  ...item,
-                  status: actingAsPm
-                    ? item.status === 'new'
-                      ? 'assigned'
-                      : item.status
-                    : item.status === 'closed'
-                      ? 'closed'
-                      : 'waiting',
-                  assignedPmId: actingAsPm ? currentUser.id : item.assignedPmId,
-                  lastMessageAt: now,
-                  unreadCount: 0,
-                }
-              : item,
+          normalizeConversations(
+            prev.map((item) =>
+              item.id === conversationId
+                ? {
+                    ...item,
+                    status: actingAsPm
+                      ? item.status === 'new'
+                        ? 'assigned'
+                        : item.status
+                      : item.status === 'closed'
+                        ? 'closed'
+                        : 'waiting',
+                    assignedPmId: actingAsPm ? currentUser.id : item.assignedPmId,
+                    lastMessageAt: now,
+                    unreadCount: 0,
+                  }
+                : item,
+            ),
           ),
         ),
       );
@@ -521,7 +653,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
   const closeConversation = useCallback(async (conversationId: string) => {
     if (!isPmRole(currentUser?.role)) {
-      throw new Error('Only PM/Supervisor can close conversations.');
+      throw new Error('Only manager/supervisor can close conversations.');
     }
 
     await remoteApi.closeConversation(conversationId);
@@ -530,15 +662,17 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
     setConversations((prev) =>
       sortConversations(
-        prev.map((item) =>
-          item.id === conversationId
-            ? {
-                ...item,
-                status: 'closed',
-                unreadCount: 0,
-                lastMessageAt: now,
-              }
-            : item,
+        normalizeConversations(
+          prev.map((item) =>
+            item.id === conversationId
+              ? {
+                  ...item,
+                  status: 'closed',
+                  unreadCount: 0,
+                  lastMessageAt: now,
+                }
+              : item,
+          ),
         ),
       ),
     );
@@ -559,7 +693,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const updateMaintenanceStatus = useCallback(
     async (requestId: string, status: MaintenanceStatus) => {
       if (!isPmRole(currentUser?.role)) {
-        throw new Error('Only PM/Supervisor can update maintenance status.');
+        throw new Error('Only manager/supervisor can update maintenance status.');
       }
 
       const updated = await remoteApi.updateMaintenanceStatus(requestId, status);
@@ -574,7 +708,7 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
   const addVisitNote = useCallback(async (payload: AddVisitNoteInput) => {
     const actingUser = currentUser;
     if (!actingUser || !isPmRole(actingUser.role)) {
-      throw new Error('Only PM/Supervisor can add site visit notes.');
+      throw new Error('Only manager/supervisor can add site visit notes.');
     }
 
     if (!payload.note.trim()) {
@@ -600,13 +734,10 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
     // Refresh from backend to ensure newly auto-created maintenance requests are shown with full data.
     const bootstrap = await remoteApi.getBootstrap();
-    setConversations(sortConversations(bootstrap.conversations));
-    setMessages(bootstrap.messages);
-    setMaintenanceRequests(bootstrap.maintenanceRequests);
-    setVisitNotes(bootstrap.visitNotes);
+    applyBootstrapState(bootstrap);
 
     return normalizedSaved;
-  }, [applyMaintenanceNoteState, currentUser]);
+  }, [applyBootstrapState, applyMaintenanceNoteState, currentUser]);
 
   const refreshConversationMessages = useCallback(
     async (conversationId: string) => {
@@ -653,21 +784,23 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
         if (remoteConversation) {
           setConversations((prev) =>
             sortConversations(
-              prev.map((item) =>
-                item.id === conversationId
-                  ? {
-                      ...item,
-                      status: remoteConversation.status ?? item.status,
-                      lifecycleStatus: remoteConversation.lifecycleStatus ?? item.lifecycleStatus,
-                      closedReason: remoteConversation.closedReason ?? item.closedReason,
-                      assignedPmId: remoteConversation.assignedPmId ?? item.assignedPmId,
-                      unreadCount:
-                        typeof remoteConversation.unreadCount === 'number'
-                          ? remoteConversation.unreadCount
-                          : item.unreadCount,
-                      lastMessageAt: remoteConversation.lastMessageAt ?? item.lastMessageAt,
-                    }
-                  : item,
+              normalizeConversations(
+                prev.map((item) =>
+                  item.id === conversationId
+                    ? {
+                        ...item,
+                        status: remoteConversation.status ?? item.status,
+                        lifecycleStatus: remoteConversation.lifecycleStatus ?? item.lifecycleStatus,
+                        closedReason: remoteConversation.closedReason ?? item.closedReason,
+                        assignedPmId: remoteConversation.assignedPmId ?? item.assignedPmId,
+                        unreadCount:
+                          typeof remoteConversation.unreadCount === 'number'
+                            ? remoteConversation.unreadCount
+                            : item.unreadCount,
+                        lastMessageAt: remoteConversation.lastMessageAt ?? item.lastMessageAt,
+                      }
+                    : item,
+                ),
               ),
             ),
           );
@@ -684,24 +817,26 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
       setConversations((prev) =>
         sortConversations(
-          prev.map((item) =>
-            item.id === conversationId
-              ? {
-                  ...item,
-                  status: remoteConversation?.status ?? item.status,
-                  lifecycleStatus: remoteConversation?.lifecycleStatus ?? item.lifecycleStatus,
-                  closedReason: remoteConversation?.closedReason ?? item.closedReason,
-                  assignedPmId: remoteConversation?.assignedPmId ?? item.assignedPmId,
-                  unreadCount:
-                    typeof remoteConversation?.unreadCount === 'number'
-                      ? remoteConversation.unreadCount
-                      : item.unreadCount + unreadIncrements,
-                  lastMessageAt:
-                    remoteConversation?.lastMessageAt
-                    ?? latestCreatedAt
-                    ?? item.lastMessageAt,
-                }
-              : item,
+          normalizeConversations(
+            prev.map((item) =>
+              item.id === conversationId
+                ? {
+                    ...item,
+                    status: remoteConversation?.status ?? item.status,
+                    lifecycleStatus: remoteConversation?.lifecycleStatus ?? item.lifecycleStatus,
+                    closedReason: remoteConversation?.closedReason ?? item.closedReason,
+                    assignedPmId: remoteConversation?.assignedPmId ?? item.assignedPmId,
+                    unreadCount:
+                      typeof remoteConversation?.unreadCount === 'number'
+                        ? remoteConversation.unreadCount
+                        : item.unreadCount + unreadIncrements,
+                    lastMessageAt:
+                      remoteConversation?.lastMessageAt
+                      ?? latestCreatedAt
+                      ?? item.lastMessageAt,
+                  }
+                : item,
+            ),
           ),
         ),
       );
@@ -750,12 +885,14 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
 
   const value = useMemo(
     () => ({
+      isHydratingAuth,
       currentUser,
       conversations,
       messages,
       maintenanceRequests,
       visitNotes,
       isRemoteMode,
+      refreshBootstrap,
       signIn,
       signInWithMicrosoft,
       signOut,
@@ -778,10 +915,12 @@ export const AppStoreProvider = ({ children }: PropsWithChildren) => {
       connectConversationRealtime,
       conversations,
       currentUser,
+      isHydratingAuth,
       isRemoteMode,
       maintenanceRequests,
       markConversationRead,
       messages,
+      refreshBootstrap,
       sendMessage,
       signIn,
       signInWithMicrosoft,

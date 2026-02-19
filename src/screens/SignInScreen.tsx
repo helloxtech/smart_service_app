@@ -19,6 +19,23 @@ import { runMicrosoftSignIn } from '../services/microsoftAuth';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+const toBoolean = (value: string | undefined): boolean | null =>
+{
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+};
+
+const emailPasswordSignInEnabled = (() =>
+{
+  const explicit = toBoolean(process.env.EXPO_PUBLIC_ENABLE_EMAIL_PASSWORD_SIGN_IN);
+  if (explicit !== null) return explicit;
+  return __DEV__;
+})();
+
 const openExternalUrl = async (url: string) => {
   const canOpen = await Linking.canOpenURL(url);
   if (!canOpen) {
@@ -36,7 +53,7 @@ const toFriendlyAuthError = (error: unknown): string =>
 
   if (normalized.includes('no active portal contact found'))
   {
-    return 'This email is not an active portal contact in Rental Smart. Internal PM users should use Continue with Microsoft. Tenant/Landlord/Admin users must exist as active contacts.';
+    return 'This email is not an active portal contact in Rental Smart. Internal manager users should use Continue with Microsoft. Tenant/Landlord/Admin users must exist as active contacts.';
   }
 
   if (normalized.includes('missing expo_public_entra_tenant_id') || normalized.includes('missing expo_public_entra_client_id'))
@@ -47,6 +64,11 @@ const toFriendlyAuthError = (error: unknown): string =>
   if (normalized.includes('microsoft token validation failed'))
   {
     return 'Microsoft sign-in token is invalid for this backend. Confirm mobile app client ID/tenant matches BFF PM_MOBILE_ENTRA_CLIENT_ID and PM_MOBILE_ENTRA_TENANT_ID.';
+  }
+
+  if (normalized.includes('email/password sign-in is disabled'))
+  {
+    return 'Email/password sign-in is disabled in this environment. Use Continue with Microsoft.';
   }
 
   if (normalized.includes('cannot reach local bff') || normalized.includes('network request failed'))
@@ -60,7 +82,7 @@ const toFriendlyAuthError = (error: unknown): string =>
 export const SignInScreen = () => {
   const { signIn, signInWithMicrosoft } = useAppStore();
 
-  const [email, setEmail] = useState('alex.chen@rentalsmart.ca');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -71,7 +93,7 @@ export const SignInScreen = () => {
   const emailValid = emailRegex.test(trimmedEmail);
   const passwordValid = password.trim().length > 0;
 
-  const canSubmit = emailValid && passwordValid && !isSubmitting;
+  const canSubmit = emailPasswordSignInEnabled && emailValid && passwordValid && !isSubmitting;
 
   const emailError =
     emailTouched && !emailValid ? 'Please enter a valid email address.' : null;
@@ -87,6 +109,14 @@ export const SignInScreen = () => {
   }, [emailValid]);
 
   const onSubmit = async () => {
+    if (!emailPasswordSignInEnabled) {
+      Alert.alert(
+        'Email sign-in unavailable',
+        'Email/password sign-in is disabled for this app build. Use Continue with Microsoft.',
+      );
+      return;
+    }
+
     setEmailTouched(true);
     setPasswordTouched(true);
 
@@ -177,68 +207,78 @@ export const SignInScreen = () => {
               disabled={isSubmitting}
             />
 
-            <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or sign in with email</Text>
-              <View style={styles.dividerLine} />
-            </View>
+            {emailPasswordSignInEnabled
+              ? (
+                <>
+                  <View style={styles.dividerRow}>
+                    <View style={styles.dividerLine} />
+                    <Text style={styles.dividerText}>or sign in with email</Text>
+                    <View style={styles.dividerLine} />
+                  </View>
 
-            <View style={styles.fieldWrap}>
-              <Text style={styles.fieldLabel}>Email</Text>
-              <TextInput
-                style={[styles.input, emailError && styles.inputError]}
-                autoCapitalize="none"
-                keyboardType="email-address"
-                placeholder="name@example.com"
-                placeholderTextColor="#8D9AA5"
-                value={email}
-                onChangeText={setEmail}
-                onBlur={() => setEmailTouched(true)}
-              />
-              {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
-              {roleHint ? <Text style={styles.roleHint}>{roleHint}</Text> : null}
-            </View>
+                  <View style={styles.fieldWrap}>
+                    <Text style={styles.fieldLabel}>Email</Text>
+                    <TextInput
+                      style={[styles.input, emailError && styles.inputError]}
+                      autoCapitalize="none"
+                      keyboardType="email-address"
+                      placeholder="name@example.com"
+                      placeholderTextColor="#8D9AA5"
+                      value={email}
+                      onChangeText={setEmail}
+                      onBlur={() => setEmailTouched(true)}
+                    />
+                    {emailError ? <Text style={styles.errorText}>{emailError}</Text> : null}
+                    {roleHint ? <Text style={styles.roleHint}>{roleHint}</Text> : null}
+                  </View>
 
-            <View style={styles.fieldWrap}>
-              <View style={styles.passwordHeaderRow}>
-                <Text style={styles.fieldLabel}>Password</Text>
-                <Pressable onPress={() => void onForgotPassword()}>
-                  <Text style={styles.linkText}>Forgot password?</Text>
-                </Pressable>
-              </View>
-              <View style={[styles.passwordWrap, passwordError && styles.inputError]}>
-                <TextInput
-                  style={styles.passwordInput}
-                  secureTextEntry={!showPassword}
-                  placeholder="Enter your password"
-                  placeholderTextColor="#8D9AA5"
-                  value={password}
-                  onChangeText={setPassword}
-                  onBlur={() => setPasswordTouched(true)}
-                />
-                <Pressable
-                  onPress={() => setShowPassword((prev) => !prev)}
-                  style={styles.eyeButton}
-                >
-                  <Ionicons
-                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={18}
-                    color={colors.textSecondary}
+                  <View style={styles.fieldWrap}>
+                    <View style={styles.passwordHeaderRow}>
+                      <Text style={styles.fieldLabel}>Password</Text>
+                      <Pressable onPress={() => void onForgotPassword()}>
+                        <Text style={styles.linkText}>Forgot password?</Text>
+                      </Pressable>
+                    </View>
+                    <View style={[styles.passwordWrap, passwordError && styles.inputError]}>
+                      <TextInput
+                        style={styles.passwordInput}
+                        secureTextEntry={!showPassword}
+                        placeholder="Enter your password"
+                        placeholderTextColor="#8D9AA5"
+                        value={password}
+                        onChangeText={setPassword}
+                        onBlur={() => setPasswordTouched(true)}
+                      />
+                      <Pressable
+                        onPress={() => setShowPassword((prev) => !prev)}
+                        style={styles.eyeButton}
+                      >
+                        <Ionicons
+                          name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                          size={18}
+                          color={colors.textSecondary}
+                        />
+                      </Pressable>
+                    </View>
+                    {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
+                  </View>
+
+                  <PrimaryButton
+                    label="Sign in"
+                    onPress={onSubmit}
+                    disabled={!canSubmit}
+                    loading={isSubmitting}
                   />
-                </Pressable>
-              </View>
-              {passwordError ? <Text style={styles.errorText}>{passwordError}</Text> : null}
-            </View>
-
-            <PrimaryButton
-              label="Sign in"
-              onPress={onSubmit}
-              disabled={!canSubmit}
-              loading={isSubmitting}
-            />
+                </>
+              )
+              : (
+                <Text style={styles.helper}>
+                  Email/password sign-in is disabled for this app build. Use Microsoft sign-in.
+                </Text>
+              )}
 
             <Text style={styles.helper}>
-              Microsoft sign-in is for internal PM users. Email sign-in supports all portal roles.
+              Microsoft sign-in is for internal manager users.
             </Text>
           </View>
 
