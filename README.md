@@ -2,6 +2,14 @@
 
 Smart Service is a cross-platform iOS/Android mobile app with role-based layouts.
 
+## Cross-repo documentation
+
+Canonical shared manuals are maintained in the portal repo:
+
+- Non-technical operations runbook: https://github.com/helloxtech/rental-smart-portal/blob/main/docs/PROPERTY-MANAGER-OPERATIONS-RUNBOOK.md
+- Technical system manual: https://github.com/helloxtech/rental-smart-portal/blob/main/docs/PROPERTY-MANAGER-USER-MANUAL.md
+- Unified risk matrix: https://github.com/helloxtech/rental-smart-portal/blob/main/docs/unified-risk-matrix-2026-02-19.md
+
 V1 scope implemented:
 - Live inbox with bot-to-manager handoff flow
 - Conversation detail with chat thread and manager reply composer
