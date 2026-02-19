@@ -24,10 +24,26 @@ import { useAppStore } from '../store/AppStore';
 import { colors, radius, spacing, typography } from '../theme/theme';
 import { formatCurrency } from '../utils/format';
 import { openExternalUrl } from '../utils/linking';
-import { MaintenanceStatus } from '../types/domain';
+import { ConversationLifecycleStatus, MaintenanceStatus } from '../types/domain';
 import { ChatRealtimeClient } from '../services/chatRealtime';
 
 type Props = NativeStackScreenProps<InboxStackParamList, 'ConversationDetail'>;
+
+const lifecycleLabelMap: Record<ConversationLifecycleStatus, string> = {
+  active: 'Active',
+  away: 'Away',
+  offline: 'Offline',
+  inactive: 'Inactive',
+  closed: 'Closed',
+};
+
+const lifecycleToneMap: Record<ConversationLifecycleStatus, { bg: string; fg: string }> = {
+  active: { bg: '#E5F6EE', fg: '#0E8A57' },
+  away: { bg: '#FFF6EA', fg: '#A35F0A' },
+  offline: { bg: '#EEF2F8', fg: '#3C5A85' },
+  inactive: { bg: '#F3F5F7', fg: '#5D6B75' },
+  closed: { bg: '#EAECEF', fg: '#5D6B75' },
+};
 
 export const ConversationDetailScreen = ({ route }: Props) => {
   const { conversationId } = route.params;
@@ -174,15 +190,24 @@ export const ConversationDetailScreen = ({ route }: Props) => {
   }
 
   const isClosed = conversation.status === 'closed';
+  const lifecycleStatus: ConversationLifecycleStatus =
+    conversation.lifecycleStatus ?? (isClosed ? 'closed' : 'active');
+  const lifecycleLabel = lifecycleLabelMap[lifecycleStatus] ?? 'Active';
+  const lifecycleTone = lifecycleToneMap[lifecycleStatus] ?? lifecycleToneMap.active;
+  const hasRecordLink = (url?: string): boolean =>
+    Boolean(url?.trim() && /[?&]pagetype=entityrecord(?:&|$)/i.test(url));
+  const canOpenPropertyRecord = hasRecordLink(conversation.property.dataverseUrl);
+  const canOpenUnitRecord = hasRecordLink(conversation.unit.dataverseUrl);
   const canAcceptHandoff =
     canManageConversation
     && !conversation.assignedPmId
     && (conversation.status === 'new' || conversation.status === 'waiting');
-  const handoffAlreadyAccepted = conversation.botEscalated && Boolean(conversation.assignedPmId);
+  const handoffAlreadyAccepted =
+    conversation.botEscalated && Boolean(conversation.assignedPmId) && !isClosed;
 
   const onAssign = async () => {
     if (!canManageConversation) {
-      Alert.alert('Restricted action', 'Only PM/Admin users can accept handoff.');
+      Alert.alert('Restricted action', 'Only manager/admin users can accept handoff.');
       return;
     }
 
@@ -242,7 +267,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
   const onCloseConversation = () => {
     if (!canManageConversation) {
-      Alert.alert('Restricted action', 'Only PM/Admin users can close chats.');
+      Alert.alert('Restricted action', 'Only manager/admin users can close chats.');
       return;
     }
 
@@ -315,7 +340,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
 
   const onUpdateStatus = async (requestId: string, status: MaintenanceStatus) => {
     if (!canManageConversation) {
-      Alert.alert('Restricted action', 'Only PM/Admin users can update maintenance status.');
+      Alert.alert('Restricted action', 'Only manager/admin users can update maintenance status.');
       return;
     }
 
@@ -326,8 +351,8 @@ export const ConversationDetailScreen = ({ route }: Props) => {
     }
   };
 
-  const workOrderSectionTitle =
-    linkedMaintenance.length === 1 ? 'Work order' : 'Work orders';
+  const maintenanceSectionTitle =
+    linkedMaintenance.length === 1 ? 'Maintenance request' : 'Maintenance requests';
 
   return (
     <KeyboardAvoidingView
@@ -348,7 +373,14 @@ export const ConversationDetailScreen = ({ route }: Props) => {
               <Text style={styles.visitor}>{conversation.visitorAlias}</Text>
               <Text style={styles.location}>{conversation.property.city}</Text>
             </View>
-            <StatusBadge status={conversation.status} />
+            <View style={styles.statusStack}>
+              <StatusBadge status={conversation.status} />
+              <View style={[styles.lifecycleChip, { backgroundColor: lifecycleTone.bg }]}>
+                <Text style={[styles.lifecycleChipText, { color: lifecycleTone.fg }]}>
+                  Visitor: {lifecycleLabel}
+                </Text>
+              </View>
+            </View>
           </View>
 
           <Text style={styles.propertyName}>{conversation.property.name}</Text>
@@ -361,27 +393,36 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           {canManageConversation && (
             <View style={styles.contextActions}>
               {canAcceptHandoff && (
-                <PrimaryButton label="Accept Handoff" onPress={onAssign} />
+                <PrimaryButton label="Accept Handoff (Take Over)" onPress={onAssign} />
               )}
-              <PrimaryButton
-                label="Open Property in Rental Smart"
-                onPress={() => openExternalUrl(conversation.property.dataverseUrl)}
-                variant="outline"
-              />
-              <PrimaryButton
-                label="Open Unit in Rental Smart"
-                onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
-                variant="outline"
-              />
+              {canOpenPropertyRecord && (
+                <PrimaryButton
+                  label="Open Property Record"
+                  onPress={() => openExternalUrl(conversation.property.dataverseUrl)}
+                  variant="outline"
+                />
+              )}
+              {canOpenUnitRecord && (
+                <PrimaryButton
+                  label="Open Unit Record"
+                  onPress={() => openExternalUrl(conversation.unit.dataverseUrl)}
+                  variant="outline"
+                />
+              )}
+              {!canOpenPropertyRecord && !canOpenUnitRecord && (
+                <Text style={styles.recordUnavailable}>
+                  Record deep links are unavailable for this conversation.
+                </Text>
+              )}
             </View>
           )}
         </View>
 
-        {conversation.botEscalated && !isClosed && (
+        {conversation.botEscalated && !isClosed && !conversation.assignedPmId && (
           <View style={styles.handoffBanner}>
             <Ionicons name="sparkles" size={16} color={colors.warning} />
             <Text style={styles.handoffText}>
-              Bot escalated this chat to a manager based on confidence rules.
+              Action needed: bot requested manager takeover for this visitor.
             </Text>
           </View>
         )}
@@ -389,7 +430,7 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           <View style={styles.acceptedBanner}>
             <Ionicons name="checkmark-circle-outline" size={16} color={colors.accent} />
             <Text style={styles.acceptedText}>
-              Handoff already accepted. Current status is {conversation.status}.
+              Handoff accepted. You can reply as the assigned manager now.
             </Text>
           </View>
         )}
@@ -416,35 +457,34 @@ export const ConversationDetailScreen = ({ route }: Props) => {
           ))}
         </View>
 
-          <View style={styles.sectionHead}>
-            <Text style={styles.sectionTitle}>{workOrderSectionTitle}</Text>
-          </View>
+          {linkedMaintenance.length > 0 && (
+            <>
+              <View style={styles.sectionHead}>
+                <Text style={styles.sectionTitle}>{maintenanceSectionTitle}</Text>
+              </View>
 
-          <View style={styles.maintenanceWrap}>
-            {linkedMaintenance.length === 0 ? (
-              <Text style={styles.emptyMaintenance}>
-                No work order linked yet.
-              </Text>
-            ) : (
-              linkedMaintenance.map((request) => (
-                <MaintenanceCard
-                  key={request.id}
-                  compact
-                  item={request}
-                  readOnly={!canManageConversation || isClosed}
-                  propertyName={conversation.property.name}
-                  unitLabel={conversation.unit.label}
-                  showDataverseLink={canManageConversation}
-                  onOpenDataverse={
-                    canManageConversation
-                      ? () => openExternalUrl(request.dataverseUrl)
-                      : undefined
-                  }
-                  onStatusChange={(status) => onUpdateStatus(request.id, status)}
-                />
-              ))
-            )}
-          </View>
+              <View style={styles.maintenanceWrap}>
+                {linkedMaintenance.map((request) => (
+                  <MaintenanceCard
+                    key={request.id}
+                    compact
+                    item={request}
+                    readOnly={!canManageConversation || isClosed}
+                    propertyName={conversation.property.name}
+                    unitLabel={conversation.unit.label}
+                    dataverseLinkLabel="Open record in Rental Smart"
+                    showDataverseLink={canManageConversation}
+                    onOpenDataverse={
+                      canManageConversation
+                        ? () => openExternalUrl(request.dataverseUrl)
+                        : undefined
+                    }
+                    onStatusChange={(status) => onUpdateStatus(request.id, status)}
+                  />
+                ))}
+              </View>
+            </>
+          )}
         </ScrollView>
 
         {!isClosed ? (
@@ -542,7 +582,21 @@ const styles = StyleSheet.create({
   contextHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+  },
+  statusStack: {
+    alignItems: 'flex-end',
+    gap: 6,
+  },
+  lifecycleChip: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  lifecycleChipText: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 0.2,
   },
   visitor: {
     color: colors.textPrimary,
@@ -567,6 +621,12 @@ const styles = StyleSheet.create({
   address: {
     color: colors.textSecondary,
     fontSize: typography.small,
+  },
+  recordUnavailable: {
+    color: colors.textSecondary,
+    fontSize: typography.small,
+    fontWeight: '600',
+    marginTop: 2,
   },
   contextActions: {
     gap: 8,
