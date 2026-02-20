@@ -142,6 +142,7 @@ eas build --platform ios --profile preview
 - Microsoft button uses Entra OAuth Authorization Code + PKCE on-device.
 - App sends Microsoft `id_token` to BFF (`/mobile/pm/auth/microsoft`) for server-side signature/issuer/audience verification.
 - BFF issues manager mobile session JWT after domain/tenant/client checks.
+- Mobile API client sends `x-request-id` on every request; surfaced API errors include request-id for escalation.
 
 2. **Live Chat**
 - Use Cloudflare Worker + Durable Objects websocket endpoint.

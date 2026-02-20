@@ -74,9 +74,16 @@ const resolveApiBaseUrl = (): string | null =>
 
 const API_BASE_URL = resolveApiBaseUrl();
 let authToken: string | null = null;
+let requestSequence = 0;
 
 const jsonHeaders = {
   'Content-Type': 'application/json',
+};
+
+const createRequestId = (): string =>
+{
+  requestSequence = (requestSequence + 1) % 1_000_000;
+  return `mobile-${Date.now().toString(36)}-${requestSequence.toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 };
 
 const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
@@ -88,6 +95,7 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
     );
   }
 
+  const requestId = createRequestId();
   let response: Response;
   try
   {
@@ -95,6 +103,7 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
       ...init,
       headers: {
         ...jsonHeaders,
+        'x-request-id': requestId,
         ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
         ...(init?.headers ?? {}),
       },
@@ -107,13 +116,25 @@ const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
       API_BASE_URL.includes('127.0.0.1') || API_BASE_URL.includes('localhost')
         ? 'Cannot reach local BFF from this device. Start rental-smart-bff and set EXPO_PUBLIC_BFF_BASE_URL to your Mac LAN IP (for example http://192.168.x.x:7071/api).'
         : `Cannot reach BFF at ${API_BASE_URL}. Confirm the backend is running and reachable from this device.`;
-
-    throw new Error(`${reason}. ${guidance}`);
+    // eslint-disable-next-line no-console
+    console.warn('[api] request.network_failed', {
+      requestId,
+      path,
+      reason,
+    });
+    throw new Error(`${reason}. ${guidance} [request-id: ${requestId}]`);
   }
 
   if (!response.ok) {
+    const responseRequestId = response.headers.get('x-request-id')?.trim() || requestId;
     const body = await response.text();
-    throw new Error(`API request failed (${response.status}): ${body}`);
+    // eslint-disable-next-line no-console
+    console.warn('[api] request.http_failed', {
+      requestId: responseRequestId,
+      path,
+      statusCode: response.status,
+    });
+    throw new Error(`API request failed (${response.status}) [request-id: ${responseRequestId}]: ${body}`);
   }
 
   if (response.status === 204) {
